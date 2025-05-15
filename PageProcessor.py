@@ -15,14 +15,15 @@ import cv2
 import warnings
 
 
+
 def is_inside_rect(px,py, rect):
     rx1,ry1,rx2,ry2 = rect
     return rx1 < px < rx2 and ry1 < py < ry2
 
 
 class PageProcessor:
-    def __init__(self, show_debug = False):
-        self.show_debug = show_debug
+    def __init__(self, debug = False):
+        self.debug = debug
         self.parts_list_color = None
         self.sub_step_color = None
 
@@ -32,17 +33,14 @@ class PageProcessor:
     def set_sub_step_color(self,color):
         self.sub_step_color = color
 
-    """
-    gets cv2 image, return rectangles of parts list,
-    by previously defined color
-    """
-    # def detect_parts_list(self,cv_image):
-    #     if self.parts_list_color is None:
-    #         # raise RuntimeError("You must set parts color first")
-    #         warnings.warn("parts list color must be set")
-    #         return None
-    #     else:
-    #         return self.__get_sub_window_locations(cv_image,self.parts_list_color)
+    def get_meta(self):
+        meta = {}
+        meta["parts_list_color"] = self.parts_list_color
+        meta["sub_step_color"] = self.sub_step_color
+        meta["irrelevant_pages"] = self.irrelevant_pages
+        meta["step_font_size"] = 28
+
+
 
     '''
     this functions detects parts list candidates by color.
@@ -58,6 +56,8 @@ class PageProcessor:
 
         if self.parts_list_color is None:
             warnings.warn("parts list color must be set")
+            return None
+        elif not parts_list_numbers:
             return None
         else:
             parts_list_candidates = self.__get_sub_window_locations(cv_image,self.parts_list_color)
@@ -77,7 +77,6 @@ class PageProcessor:
 
     def detect_sub_steps(self,cv_image):
         if self.sub_step_color is None:
-            # raise RuntimeError("You must set parts color first")
             warnings.warn("sub set color must be set")
             return None
         else:
@@ -107,7 +106,7 @@ class PageProcessor:
                 rects.append((x,y,x+w,y+h))
 
         # Draw rectangles on a copy of the original image
-        if self.show_debug:
+        if self.debug:
             # mask applied
             masked_image = cv_image.copy()
             result = cv2.bitwise_and(masked_image, masked_image, mask=mask)
@@ -155,15 +154,14 @@ class PageProcessor:
         # step 1 - detect the top left point - start of step
 
         for txt, (x1,y1,x2,y2) in steps_number_list:
-            print ("checking for: ",txt)
-
+        
             # check if there is a part list above it
-            for rect in parts_list:
-                rx1, ry1, rx2, ry2 = rect
-                if rx1 < x1+10 < rx2 and ry1 < y1-10 < ry2:
-                    print ("found upper list")
-                    y1 = rect[1] - 1
-                    break
+            if parts_list:
+                for rect in parts_list:
+                    rx1, ry1, rx2, ry2 = rect
+                    if rx1 < x1+10 < rx2 and ry1 < y1-10 < ry2:
+                        y1 = rect[1] - 1
+                        break
 
             # make a few pixes before the number inside step area
             x1 = x1 - 10
@@ -179,9 +177,6 @@ class PageProcessor:
         # step 2
         for i in range (len(steps)-1):
             x1, y1, x2, y2 = steps[i]
-            print("i is: ", i)
-            # тут надо проверять не только следующий, но и все следующие.
-            # потому что в 2*2 у первого есть сосед и справа и внизу, и это разные соседи
 
             index_right = -1
             index_down = -1
@@ -190,16 +185,14 @@ class PageProcessor:
             xx1, yy1, xx2, yy2 = steps[i+1]
 
             if y1 < yy1 :
-                print(" found down of NEXT")
+                # print(" found down of NEXT")
                 index_down = i + 1
-
-
 
             for j in range(i+1,len(steps)):
                 xx1, yy1, xx2, yy2 = steps[j]
 
                 if x1 < xx1 and index_right == -1:
-                    print(" found right neighbor")
+                    # print(" found right neighbor")
                     index_right = j
 
 
@@ -222,8 +215,6 @@ class PageProcessor:
 
         x1, y1, x2, y2 = steps[-1]
         steps[-1] = (x1, y1, pdf_x-5, pdf_y-5)
-
-
 
         return steps
 

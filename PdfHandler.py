@@ -1,0 +1,152 @@
+import os
+import fitz  # PyMuPDF
+import cv2
+import numpy as np
+
+import PageProcessor
+
+class PdfHandler:
+    def __init__(self):
+        self.pdf_document = None
+        self.actual_page_count = None
+        self.pdf_size = None
+        self.current_page_index = 0
+        self.current_page_jpeg = None
+        self.current_page_pdf = None
+        self.irrelevant_pages = set()
+
+        self.steps_numbers = None
+        self.partslist_numbers = None
+
+        self.pp = PageProcessor.PageProcessor(debug=False)
+
+        self.parts_list = None
+        self.sub_module_list = None
+        self.steps_area = None
+
+
+
+    def load_pdf(self, file_path):
+        if os.path.exists(file_path):
+            # load file
+            self.pdf_document = fitz.open(file_path)
+
+            # reset variables
+            self.current_page_index = 0
+            self.irrelevant_pages.clear()
+            self.actual_page_count = self.pdf_document.page_count
+
+            # update page size
+            self.current_page_pdf = self.pdf_document[self.current_page_index]
+            self.pdf_size = (int(self.current_page_pdf.rect.width), int(self.current_page_pdf.rect.height))
+
+            ### !!!!!!!!!
+            self.instruction_step_font_size = 26.0  # some pdfs has 30. make setting file !!!!!
+
+            print(f"Loaded: {os.path.basename(file_path)}")
+            self.__update_page_image__()
+        else:
+            print("File not found!")
+            exit(1)
+
+    def __update_page_image__(self):
+        if not self.pdf_document or self.current_page_index >= self.actual_page_count:
+            return None
+        self.current_page_pdf = self.pdf_document[self.current_page_index]
+        pix = self.current_page_pdf.get_pixmap(matrix=fitz.Matrix(1, 1))
+        img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
+        # Create a writable copy to avoid read-only error
+        img = img.copy()
+        img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
+        self.current_page_jpeg = img
+
+        # clean decorations
+        self.steps_numbers = []
+        self.partslist_numbers = []
+        self.parts_list = []
+        self.sub_module_list = []
+        self.steps_area = []
+
+        return None
+
+    def next_image(self):
+        tmp = self.current_page_index + 1
+        while tmp in self.irrelevant_pages:
+            tmp += 1
+
+        if tmp < self.actual_page_count - 1:
+            self.current_page_index = tmp
+            self.__update_page_image__()
+
+    def prev_image(self):
+        tmp = self.current_page_index - 1
+        while tmp in self.irrelevant_pages:
+            tmp -= 1
+
+        if tmp >= 0:
+            self.current_page_index = tmp
+            self.__update_page_image__()
+
+
+    def add_page_as_irrelevant(self):
+        self.irrelevant_pages.add(self.current_page_index)
+        self.actual_page_count -= 1
+
+    def set_parts_list_color(self, color):
+        self.pp.set_parts_list_color(color)
+
+    def set_sub_step_color(self, color):
+        self.pp.set_sub_step_color(color)
+
+    def do_page(self):
+        self.__extract_pdf_page__()
+        self.__process_page__()
+
+    def close(self):
+        if self.pdf_document:
+            self.pdf_document.close()
+    '''
+    in this function i should technicaly scan pdf doc,
+    and return relevant lists of objects (list of texts , list of images)
+    after i have raw data, i can process it via some CV methods
+    '''
+
+    def __extract_pdf_page__(self):
+        # self.bbox_list = []
+
+        # get steps numbers
+        steps = []
+        list_numbers = []
+
+        # get texts from PDF
+        for block in self.current_page_pdf.get_text("dict")["blocks"]:
+            if "lines" in block:
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        text = span["text"]
+                        pos = [int(v) for v in span["bbox"]]
+                        font_size = span["size"]
+
+                        # get step numbers by size
+                        if font_size == self.instruction_step_font_size:
+                            steps.append((text, pos))
+
+                        # get parts list numbers by size
+                        if font_size == 8 and 'x' in text:  # means it's parts font
+                            list_numbers.append((text, pos))
+
+                        # print (f"Text: {text}\n  Position: {pos}\n  Font size: {font_size}\n")
+
+        self.steps_numbers = sorted(steps, key=lambda x: int(x[0]))
+        self.partslist_numbers = list_numbers  # sorted(list_numbers, key=lambda x: int(x[0]))
+
+    def __process_page__(self):
+
+        self.parts_list = self.pp.detect_parts_list(self.current_page_jpeg,self.partslist_numbers)
+        self.sub_module_list = self.pp.detect_sub_steps(self.current_page_jpeg)
+
+        self.steps_area = self.pp.detect_steps_area(self.steps_numbers,self.parts_list,self.pdf_size)
+
+    def get_img(self):
+        # return self.current_page_jpeg
+        return self.current_page_jpeg.copy()
