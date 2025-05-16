@@ -131,8 +131,13 @@ class LegoInstructionParser:
             elif key == ord('p'):  # 'p' to process the page
                 self.pdf_handler.do_page()
 
-            elif key in [ord('l'),ord('s')] and self.ref_point:  # 'l' for list of parts
+            elif key in [ord('l'),ord('s'),ord('f')] and self.ref_point:  # 'l' for list of parts, s for sub step, f for step font
                 (x1, y1), (x2, y2) = self.ref_point
+                if key == ord('f'):
+                    self.pdf_handler.set_step_font_rect(self.ref_point)
+                    self.ref_point = []
+                    continue
+
                 current_jpeg = self.pdf_handler.get_img()
                 roi = current_jpeg[min(y1, y2):max(y1, y2), min(x1, x2):max(x1, x2)]
                 avg_parts_color = np.mean(roi, axis=(0, 1)).astype(np.uint8)
@@ -140,9 +145,11 @@ class LegoInstructionParser:
                 if key == ord('l'):
                     print ("parts list color set")
                     self.pdf_handler.set_parts_list_color(avg_parts_color)
+                    continue
                 if key == ord('s'):
                     print("subset color set")
                     self.pdf_handler.set_sub_step_color(avg_parts_color)
+                    continue
 
         cv2.destroyAllWindows()
         self.pdf_handler.close()
@@ -151,7 +158,7 @@ class LegoInstructionParser:
 
 if __name__ == "__main__":
     parser = LegoInstructionParser()
-    # parser.run("10698_X_Castle.pdf")
-    # parser.run("6186243.pdf")
-    # parser.run("6217542.pdf")
+    # parser.run("Manuals/10698_X_Castle.pdf")
+    # parser.run("Manuals/6186243.pdf")
+    # parser.run("Manuals/6217542.pdf")
     parser.run("Manuals/6420974.pdf")

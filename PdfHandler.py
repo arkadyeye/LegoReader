@@ -1,4 +1,7 @@
+import math
 import os
+import warnings
+
 import fitz  # PyMuPDF
 import cv2
 import numpy as np
@@ -19,6 +22,7 @@ class PdfHandler:
         self.partslist_numbers = None
 
         self.pp = PageProcessor.PageProcessor(debug=False)
+        self.instruction_step_font_size = None
 
         self.parts_list = None
         self.sub_module_list = None
@@ -39,9 +43,6 @@ class PdfHandler:
             # update page size
             self.current_page_pdf = self.pdf_document[self.current_page_index]
             self.pdf_size = (int(self.current_page_pdf.rect.width), int(self.current_page_pdf.rect.height))
-
-            ### !!!!!!!!!
-            self.instruction_step_font_size = 26.0  # some pdfs has 30. make setting file !!!!!
 
             print(f"Loaded: {os.path.basename(file_path)}")
             self.__update_page_image__()
@@ -92,6 +93,23 @@ class PdfHandler:
         self.irrelevant_pages.add(self.current_page_index)
         self.actual_page_count -= 1
 
+    def set_step_font_rect(self,ref_point):
+        (x1, y1), (x2, y2) = ref_point
+        xc = x1 + (x2-x1)/2
+        yc = y1 + (y2-y1)/2
+        res = self.__get_step_font_size__(xc,yc)
+        if res:
+            self.instruction_step_font_size = res
+            print ("Font size set to: ",res)
+        else:
+            warnings.warn("failed font selection")
+        '''
+        here we got a rect with some step num. we have to find the closest rect
+        so actualy we need a center of this rect, and centers of all other
+        then find a dist to each one, and chose the minimal
+        '''
+
+
     def set_parts_list_color(self, color):
         self.pp.set_parts_list_color(color)
 
@@ -105,11 +123,8 @@ class PdfHandler:
     def close(self):
         if self.pdf_document:
             self.pdf_document.close()
-    '''
-    in this function i should technicaly scan pdf doc,
-    and return relevant lists of objects (list of texts , list of images)
-    after i have raw data, i can process it via some CV methods
-    '''
+
+
 
     def __extract_pdf_page__(self):
         # self.bbox_list = []
@@ -128,7 +143,7 @@ class PdfHandler:
                         font_size = span["size"]
 
                         # get step numbers by size
-                        if font_size == self.instruction_step_font_size:
+                        if self.instruction_step_font_size and font_size == self.instruction_step_font_size:
                             steps.append((text, pos))
 
                         # get parts list numbers by size
@@ -150,3 +165,25 @@ class PdfHandler:
     def get_img(self):
         # return self.current_page_jpeg
         return self.current_page_jpeg.copy()
+
+    #############################################
+    ###
+    ###   some logic here, till we build a separate class for it
+
+    def __get_step_font_size__(self,x,y):
+
+        # get texts from PDF
+        for block in self.current_page_pdf.get_text("dict")["blocks"]:
+            if "lines" in block:
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        text = span["text"]
+                        pos = [int(v) for v in span["bbox"]]
+                        font_size = span["size"]
+
+                        x1,y1,x2,y2 = pos
+
+                        if x1 < x < x2 and y1 < y < y2:
+                            # print ("click in ",text)
+                            return font_size
+        return None
