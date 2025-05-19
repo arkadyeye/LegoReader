@@ -1,4 +1,5 @@
 import math
+import json
 import os
 import warnings
 
@@ -10,6 +11,7 @@ import PageProcessor
 
 class PdfHandler:
     def __init__(self):
+        self.file_path = None
         self.pdf_document = None
         self.actual_page_count = None
         self.pdf_size = None
@@ -17,6 +19,8 @@ class PdfHandler:
         self.current_page_jpeg = None
         self.current_page_pdf = None
         self.irrelevant_pages = set()
+
+        self.meta_loaded = False
 
         self.steps_numbers = None
         self.partslist_numbers = None
@@ -35,9 +39,33 @@ class PdfHandler:
             # load file
             self.pdf_document = fitz.open(file_path)
 
-            # reset variables
-            self.current_page_index = 0
             self.irrelevant_pages.clear()
+            self.instruction_step_font_size = 26 # default value
+            self.meta_loaded = False
+
+            meta_path = file_path.replace("pdf", "meta")
+            if os.path.exists(meta_path):
+                with open(meta_path, "r") as f:
+                    meta = json.load(f)
+
+                    self.instruction_step_font_size = meta["step_font_size"]
+
+                    self.pp.set_parts_list_color(np.array(meta["parts_list_color"]))
+
+                    if meta["sub_step_color"] != "n/a":
+                        self.pp.set_sub_step_color(np.array(meta["sub_step_color"]))
+
+                    if meta["irrelevant_pages"] != "n/a":
+                        self.irrelevant_pages = set(meta["irrelevant_pages"])
+
+                    self.meta_loaded = True
+
+
+
+            # reset variables
+            self.file_path = file_path
+            self.current_page_index = 0
+
             self.actual_page_count = self.pdf_document.page_count
 
             # update page size
@@ -75,9 +103,11 @@ class PdfHandler:
         while tmp in self.irrelevant_pages:
             tmp += 1
 
-        if tmp < self.actual_page_count - 1:
+        if tmp < self.actual_page_count:
             self.current_page_index = tmp
             self.__update_page_image__()
+            if self.meta_loaded:
+                self.do_page()
 
     def prev_image(self):
         tmp = self.current_page_index - 1
@@ -87,11 +117,13 @@ class PdfHandler:
         if tmp >= 0:
             self.current_page_index = tmp
             self.__update_page_image__()
+            if self.meta_loaded:
+                self.do_page()
 
 
     def add_page_as_irrelevant(self):
         self.irrelevant_pages.add(self.current_page_index)
-        self.actual_page_count -= 1
+        # self.actual_page_count -= 1
 
     def set_step_font_rect(self,ref_point):
         (x1, y1), (x2, y2) = ref_point
@@ -124,6 +156,27 @@ class PdfHandler:
         if self.pdf_document:
             self.pdf_document.close()
 
+        # here I want to save meta file
+        #if we have at least step font size, and parts list - we are good to go
+        if self.instruction_step_font_size and self.pp.parts_list_color is not None:
+            meta = {}
+            meta["step_font_size"] = self.instruction_step_font_size
+            meta["parts_list_color"] = self.pp.parts_list_color.tolist()
+
+            if self.pp.sub_step_color is not None:
+                meta["sub_step_color"] = self.pp.sub_step_color.tolist()
+            else:
+                meta["sub_step_color"] = "n/a"
+
+            if len(self.irrelevant_pages) != 0:
+                meta["irrelevant_pages"] = list(self.irrelevant_pages)
+            else:
+                meta["irrelevant_pages"] = "n/a"
+
+            meta_name = self.file_path.replace("pdf", "meta")
+            print ("metadata: ",meta)
+            with open(meta_name, "w") as f:
+                json.dump(meta, f, indent=4)
 
 
     def __extract_pdf_page__(self):
