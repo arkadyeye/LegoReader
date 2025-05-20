@@ -131,6 +131,9 @@ class LegoInstructionParser:
             elif key == ord('p'):  # 'p' to process the page
                 self.pdf_handler.do_page()
 
+            elif key ==  ord('e'):  # 'e' for step extractions
+                self.pdf_handler.extracts_steps()
+
             elif key in [ord('l'),ord('s'),ord('f')] and self.ref_point:  # 'l' for list of parts, s for sub step, f for step font
                 (x1, y1), (x2, y2) = self.ref_point
                 if key == ord('f'):
@@ -159,6 +162,6 @@ class LegoInstructionParser:
 if __name__ == "__main__":
     parser = LegoInstructionParser()
     # parser.run("Manuals/10698_X_Castle.pdf")
-    # parser.run("Manuals/6186243.pdf")
+    parser.run("Manuals/6186243.pdf")
     # parser.run("Manuals/6217542.pdf")
-    parser.run("Manuals/6420974.pdf")
+    # parser.run("Manuals/6420974.pdf")

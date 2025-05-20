@@ -8,6 +8,8 @@ import cv2
 import numpy as np
 
 import PageProcessor
+import Step_Processor
+
 
 class PdfHandler:
     def __init__(self):
@@ -26,7 +28,9 @@ class PdfHandler:
         self.partslist_numbers = None
 
         self.pp = PageProcessor.PageProcessor(debug=False)
+        self.sp = None
         self.instruction_step_font_size = None
+        self.parts_font_size = None
 
         self.parts_list = None
         self.sub_module_list = None
@@ -41,6 +45,8 @@ class PdfHandler:
 
             self.irrelevant_pages.clear()
             self.instruction_step_font_size = 26 # default value
+            self.parts_font_size = 8 #default value
+            self.sp = Step_Processor.StepProcessor(self.instruction_step_font_size,self.parts_font_size)
             self.meta_loaded = False
 
             meta_path = file_path.replace("pdf", "meta")
@@ -49,6 +55,7 @@ class PdfHandler:
                     meta = json.load(f)
 
                     self.instruction_step_font_size = meta["step_font_size"]
+                    self.sp = Step_Processor.StepProcessor(self.instruction_step_font_size,self.parts_font_size)
 
                     self.pp.set_parts_list_color(np.array(meta["parts_list_color"]))
 
@@ -120,7 +127,6 @@ class PdfHandler:
             if self.meta_loaded:
                 self.do_page()
 
-
     def add_page_as_irrelevant(self):
         self.irrelevant_pages.add(self.current_page_index)
         # self.actual_page_count -= 1
@@ -132,6 +138,7 @@ class PdfHandler:
         res = self.__get_step_font_size__(xc,yc)
         if res:
             self.instruction_step_font_size = res
+            self.sp = Step_Processor.StepProcessor(self.instruction_step_font_size,self.parts_font_size)
             print ("Font size set to: ",res)
         else:
             warnings.warn("failed font selection")
@@ -140,7 +147,6 @@ class PdfHandler:
         so actualy we need a center of this rect, and centers of all other
         then find a dist to each one, and chose the minimal
         '''
-
 
     def set_parts_list_color(self, color):
         self.pp.set_parts_list_color(color)
@@ -214,6 +220,17 @@ class PdfHandler:
         self.sub_module_list = self.pp.detect_sub_steps(self.current_page_jpeg)
 
         self.steps_area = self.pp.detect_steps_area(self.steps_numbers,self.parts_list,self.pdf_size)
+
+    def extracts_steps(self):
+        '''
+        here I expect to get all steps from one page.
+        theoreticly, i have to get an object, contains all step element, because i've already found them in detect_Steps_area
+
+        '''
+        if self.sp:
+            self.sp.extract_step(self.pdf_document, self.current_page_index,self.steps_area)
+        else:
+            warnings.warn("failed to run step extractor. font not set ?")
 
     def get_img(self):
         # return self.current_page_jpeg

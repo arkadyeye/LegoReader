@@ -64,14 +64,14 @@ def inspect_pdf(pdf_path,page_number):
                 x0, y0, x1, y1 = [int(v) for v in span["bbox"]]
                 font_size = span['size']
 
-            if len(text) < 5 and 'x' in text and font_size == 6.0:
-                text_block = ContentBlock(
-                    pos = (x0,y0,x1,y1),
-                    type="text",
-                    text= span["text"].strip(),
-                    font = span['size']
-                )
-                page_text.append(text_block)
+                if len(text) < 5 and 'x' in text and font_size == 6.0:
+                    text_block = ContentBlock(
+                        pos = (x0,y0,x1,y1),
+                        type="text",
+                        text= span["text"].strip(),
+                        font = span['size']
+                    )
+                    page_text.append(text_block)
 
 
 
@@ -149,7 +149,7 @@ def inspect_pdf(pdf_path,page_number):
 
 # Example usage
 # inspect_pdf("Manuals/6186243.pdf",38)
-inspect_pdf("Manuals/6420974.pdf",158) #157,158
+inspect_pdf("Manuals/6420974.pdf",157) #157,158
 # inspect_pdf("Manuals/6208467.pdf",394) #393,394
 
 
