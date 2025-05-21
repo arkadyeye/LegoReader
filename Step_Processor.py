@@ -109,7 +109,7 @@ class StepProcessor:
 
         return step_text
 
-    def extract_step(self,pdf_document, page_number, steps_rects):
+    def extract_step(self,top_folder,pdf_document, page_number, steps_rects):
         self.pdf_document = pdf_document
         self.pdf_page = pdf_document[page_number]
         self.steps_rects = steps_rects
@@ -129,6 +129,7 @@ class StepProcessor:
                 if text.font == self.step_font_size:
                     step_number = text.text
                     folder = 's' + str(step_number)
+                    folder = os.path.join(top_folder, folder)
                     os.makedirs(folder, exist_ok=True)
                     break
 

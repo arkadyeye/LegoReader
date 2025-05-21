@@ -149,8 +149,10 @@ def inspect_pdf(pdf_path,page_number):
 
 # Example usage
 # inspect_pdf("Manuals/6186243.pdf",38)
-inspect_pdf("Manuals/6420974.pdf",157) #157,158
-# inspect_pdf("Manuals/6208467.pdf",394) #393,394
+# inspect_pdf("Manuals/6420974.pdf",157) #157,158
+# inspect_pdf("Manuals/6208467.pdf",393) #393,394
+inspect_pdf("Manuals/6566113.pdf",169) #169,170
+
 
 
 

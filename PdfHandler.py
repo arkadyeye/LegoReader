@@ -10,10 +10,14 @@ import numpy as np
 import PageProcessor
 import Step_Processor
 
+top_folder = "processed"
+
 
 class PdfHandler:
     def __init__(self):
-        self.file_path = None
+        self.pdf_name = None
+        self.export_folder = None
+
         self.pdf_document = None
         self.actual_page_count = None
         self.pdf_size = None
@@ -38,10 +42,17 @@ class PdfHandler:
 
 
 
-    def load_pdf(self, file_path):
+    def load_pdf(self, manuals_folder, pdf_name):
+        file_path = os.path.join(manuals_folder, pdf_name)
+
         if os.path.exists(file_path):
             # load file
             self.pdf_document = fitz.open(file_path)
+            self.pdf_name = pdf_name
+
+            self.export_folder = pdf_name.replace(".pdf", "")
+            ex_folder = os.path.join(top_folder, self.export_folder)
+            os.makedirs(ex_folder, exist_ok=True)
 
             self.irrelevant_pages.clear()
             self.instruction_step_font_size = 26 # default value
@@ -49,7 +60,12 @@ class PdfHandler:
             self.sp = Step_Processor.StepProcessor(self.instruction_step_font_size,self.parts_font_size)
             self.meta_loaded = False
 
-            meta_path = file_path.replace("pdf", "meta")
+            meta_name = pdf_name.replace("pdf", "meta")
+            meta_path = os.path.join(self.export_folder, meta_name)
+            meta_path = os.path.join(top_folder, meta_path)
+            print ("meta path is: ",meta_path)
+
+
             if os.path.exists(meta_path):
                 with open(meta_path, "r") as f:
                     meta = json.load(f)
@@ -70,7 +86,7 @@ class PdfHandler:
 
 
             # reset variables
-            self.file_path = file_path
+
             self.current_page_index = 0
 
             self.actual_page_count = self.pdf_document.page_count
@@ -179,9 +195,12 @@ class PdfHandler:
             else:
                 meta["irrelevant_pages"] = "n/a"
 
-            meta_name = self.file_path.replace("pdf", "meta")
-            print ("metadata: ",meta)
-            with open(meta_name, "w") as f:
+            meta_name = self.pdf_name.replace("pdf", "meta")
+            meta_path = os.path.join(self.export_folder, meta_name)
+            meta_path = os.path.join(top_folder, meta_path)
+            print ("metadata: ",meta_path)
+
+            with open(meta_path, "w") as f:
                 json.dump(meta, f, indent=4)
 
 
@@ -228,7 +247,8 @@ class PdfHandler:
 
         '''
         if self.sp:
-            self.sp.extract_step(self.pdf_document, self.current_page_index,self.steps_area)
+            target_folder = os.path.join(top_folder, self.export_folder)
+            self.sp.extract_step(target_folder,self.pdf_document, self.current_page_index,self.steps_area)
         else:
             warnings.warn("failed to run step extractor. font not set ?")
 

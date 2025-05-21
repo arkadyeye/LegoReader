@@ -1,7 +1,13 @@
 import cv2
 import numpy as np
+import os
 
 import PdfHandler
+
+#######
+manuals_folder = "Manuals"
+
+#######
 
 
 zoom = 1.5
@@ -16,6 +22,7 @@ class LegoInstructionParser:
     def __init__(self):
         self.window_name = "LEGO Instruction Parser"
 
+        self.pdf_name = None
         self.pdf_handler = None
 
         self.selection_start = None
@@ -103,10 +110,13 @@ class LegoInstructionParser:
     #===================================
 
 
-    def run(self, pdf_path):
+    def run(self, pdf_name):
 
+
+
+        self.pdf_name = pdf_name
         self.pdf_handler = PdfHandler.PdfHandler()
-        self.pdf_handler.load_pdf(pdf_path)
+        self.pdf_handler.load_pdf(manuals_folder,pdf_name)
 
         cv2.namedWindow(self.window_name)
         cv2.setMouseCallback(self.window_name, self.mouse_callback)
@@ -128,7 +138,7 @@ class LegoInstructionParser:
             elif key == ord('i'):  # 'i' to mark irrelevant
                 self.pdf_handler.add_page_as_irrelevant()
 
-            elif key == ord('p'):  # 'p' to process the page
+            elif key == ord('d'):  # 'd' to "do" - process the page
                 self.pdf_handler.do_page()
 
             elif key ==  ord('e'):  # 'e' for step extractions
@@ -162,6 +172,7 @@ class LegoInstructionParser:
 if __name__ == "__main__":
     parser = LegoInstructionParser()
     # parser.run("Manuals/10698_X_Castle.pdf")
-    parser.run("Manuals/6186243.pdf")
+    # parser.run("Manuals/6186243.pdf")
     # parser.run("Manuals/6217542.pdf")
     # parser.run("Manuals/6420974.pdf")
+    parser.run("6420974.pdf")
