@@ -118,6 +118,7 @@ class LegoInstructionParser:
         self.pdf_handler = PdfHandler.PdfHandler()
         self.pdf_handler.load_pdf(manuals_folder,pdf_name)
 
+
         cv2.namedWindow(self.window_name)
         cv2.setMouseCallback(self.window_name, self.mouse_callback)
 
@@ -140,6 +141,9 @@ class LegoInstructionParser:
 
             elif key == ord('d'):  # 'd' to "do" - process the page
                 self.pdf_handler.do_page()
+
+            elif key == ord('p'):  # 'p' for parts processor
+                self.pdf_handler.do_parts_page()
 
             elif key ==  ord('e'):  # 'e' for step extractions
                 self.pdf_handler.extracts_steps()

@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 
 import PageProcessor
+import Parts_Processor
 import Step_Processor
 
 top_folder = "processed"
@@ -31,7 +32,9 @@ class PdfHandler:
         self.steps_numbers = None
         self.partslist_numbers = None
 
-        self.pp = PageProcessor.PageProcessor(debug=False)
+        self.pp = PageProcessor.PageProcessor(debug = False)
+        self.parts_processor = Parts_Processor.PartsProcessor(debug = False)
+
         self.sp = None
         self.instruction_step_font_size = None
         self.parts_font_size = None
@@ -169,6 +172,15 @@ class PdfHandler:
 
     def set_sub_step_color(self, color):
         self.pp.set_sub_step_color(color)
+
+    def do_parts_page(self):
+        # don't forget top folder
+        if self.parts_processor:
+            target_folder = os.path.join(top_folder, self.export_folder)
+            self.parts_processor.extract_parts(target_folder,self.pdf_document, self.current_page_index)
+        else:
+            warnings.warn("parts processor not defined")
+
 
     def do_page(self):
         self.__extract_pdf_page__()
