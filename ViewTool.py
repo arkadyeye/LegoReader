@@ -176,7 +176,7 @@ class LegoInstructionParser:
 if __name__ == "__main__":
     parser = LegoInstructionParser()
     # parser.run("Manuals/10698_X_Castle.pdf")
-    # parser.run("Manuals/6186243.pdf")
+    parser.run("6186243.pdf")
     # parser.run("Manuals/6217542.pdf")
     # parser.run("Manuals/6420974.pdf")
-    parser.run("6420974.pdf")
+    # parser.run("6420974.pdf")

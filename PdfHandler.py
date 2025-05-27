@@ -34,6 +34,7 @@ class PdfHandler:
 
         self.pp = PageProcessor.PageProcessor(debug = False)
         self.parts_processor = Parts_Processor.PartsProcessor(debug = False)
+        self.all_parts_df = None
 
         self.sp = None
         self.instruction_step_font_size = None
@@ -68,7 +69,7 @@ class PdfHandler:
             meta_path = os.path.join(top_folder, meta_path)
             print ("meta path is: ",meta_path)
 
-
+            # check if metafile exists
             if os.path.exists(meta_path):
                 with open(meta_path, "r") as f:
                     meta = json.load(f)
@@ -86,6 +87,8 @@ class PdfHandler:
 
                     self.meta_loaded = True
 
+            #check if parts list exists
+            self.all_parts_df = self.parts_processor.load_parts_list(ex_folder)
 
 
             # reset variables
@@ -177,7 +180,7 @@ class PdfHandler:
         # don't forget top folder
         if self.parts_processor:
             target_folder = os.path.join(top_folder, self.export_folder)
-            self.parts_processor.extract_parts(target_folder,self.pdf_document, self.current_page_index)
+            self.all_parts_df =  self.parts_processor.extract_parts(target_folder, self.pdf_document, self.current_page_index)
         else:
             warnings.warn("parts processor not defined")
 
@@ -259,8 +262,20 @@ class PdfHandler:
 
         '''
         if self.sp:
+
+            # print (self.all_parts_list[5])
+
+
             target_folder = os.path.join(top_folder, self.export_folder)
-            self.sp.extract_step(target_folder,self.pdf_document, self.current_page_index,self.steps_area)
+            # self.sp.extract_step(target_folder,self.pdf_document, self.current_page_index,self.steps_area)
+            for i in range (1,self.pdf_document.page_count):
+                if i not in self.irrelevant_pages:
+                    print ("extracting pdf page: ",i)
+                    self.current_page_index = i
+                    self.__update_page_image__()
+                    self.__extract_pdf_page__()
+                    self.__process_page__()
+                    self.sp.extract_step(target_folder, self.pdf_document, i, self.steps_area, self.all_parts_df)
         else:
             warnings.warn("failed to run step extractor. font not set ?")
 

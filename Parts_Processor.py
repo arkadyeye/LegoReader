@@ -6,6 +6,8 @@ from typing import Tuple, Optional, Literal
 import numpy as np
 import cv2
 
+import pandas as pd
+
 @dataclass
 class ContentBlock:
     pos: Tuple[int, int, int, int]                      # (x1, y1, x2, y2)
@@ -16,18 +18,26 @@ class ContentBlock:
     font: Optional[int] = None
     image_data: Optional[bytes] = None  # binary image data
 
-# page_images = []
-# page_text = []
-#
-# results_to_draw = []
+@dataclass
+class FinalPart:
+    image_data: Optional[bytes] = None  # binary image data
+    element_id: Optional[str] = None  # extracted or associated text
+    part_num: Optional[str] = None
+    color_id: Optional[str] = None
+
+
 
 class PartsProcessor:
     def __init__(self,debug = False):
         self.page_images = []
-        self.parts_ids = []
+        self.element_ids = []
         self.amount_texts = []
         self.parts_list_font_size = 6.0
         self.debug = debug
+
+        # element_id,part_num,color_id,design_id
+        self.df = pd.read_csv('elements.csv')
+        self.df['element_id'] = self.df['element_id'].astype(str)
 
     def __get_pdf_texts(self,pdf_page):
 
@@ -92,7 +102,53 @@ class PartsProcessor:
 
         return page_images
 
+    def load_parts_list(self,top_folder):
+        '''
+        here we need to reasamble parts list, from files on disk.
+        this is not efficient at all, but it allows manual editing of the list
+        :return: list of objects of parts (image_data,element_id,amount,part_num,color)
+        '''
+
+        # reconstruct file paths
+        fill_path = os.path.join(top_folder, "parts")
+        fill_path_images = os.path.join(fill_path, "images")
+        parts_path = os.path.join(fill_path, "parts.txt")
+
+        try:
+            df = pd.read_csv(parts_path)
+        except FileNotFoundError:
+            print("Warning: The parts CSV file was not found.")
+            df = None  # or handle differently depending on your needs
+
+        # inner function !! cool ?
+        def load_image(row):
+
+
+            element_id = row['element_id']
+            ext = row['ext']
+
+            # Check if ext is missing (NaN or empty string)
+            if pd.isna(ext) or str(ext).strip() == '':
+                return None
+
+            filename = f'img_{element_id}_0.{ext}'
+            path = os.path.join(fill_path_images, filename)  # Update with actual image directory
+
+            image = cv2.imread(path)
+            return image  # None if file doesn't exist or failed to load
+
+        # Add a new column with the image data
+        df['image'] = df.apply(load_image, axis=1)
+
+        print("Parts loaded from disk")
+
+        return df
+
+
     def extract_parts(self,top_folder,pdf_doc,page_number):
+
+        parts_ram_list = []
+
         current_page_pdf = pdf_doc[page_number]
 
         # does it really used ?
@@ -100,7 +156,7 @@ class PartsProcessor:
         # print(f"Rotation: {current_page_pdf.rotation}")
 
         # get texts and images from parts list
-        self.parts_ids,self.amount_texts = self.__get_pdf_texts(current_page_pdf)
+        self.element_ids,self.amount_texts = self.__get_pdf_texts(current_page_pdf)
         self.page_images = self.__get_pdf_images(pdf_doc,current_page_pdf)
 
         #prepare output data file
@@ -112,13 +168,16 @@ class PartsProcessor:
         os.makedirs(fill_path_images, exist_ok=True)
         parts_path = os.path.join(fill_path, "parts.txt")
 
-        file = open(parts_path, 'a')
+        file = open(parts_path, 'w')
+        file.write("element_id,ext,amount,part_num,color_id\n")
 
-        #used for debug
+        #this list used for debug
         results_to_draw = []
 
-        for part_id in self.parts_ids:
-            tx0, ty0, tx1, ty1 = part_id.pos
+
+        # extracting each part
+        for element_id in self.element_ids:
+            tx0, ty0, tx1, ty1 = element_id.pos
 
             # look for parts amount
             amount_found = False
@@ -130,31 +189,54 @@ class PartsProcessor:
                     break
 
             if not amount_found:
-                print(f"part number {part_id.text} without amount !!!!!!!!")
+                print(f"element id {element_id.text} without amount !!!!!!!!")
                 continue
 
             # look for it's image
             image_counter = -1
+            image_data = None
+            image_extension = ""
             for each in self.page_images:
                 x0, y0, x1, y1 = each.pos
                 if x0 < tx0 + 5 < x1 and y0 < ty0 - 12 < y1:
                     results_to_draw.append((x0, y0, max(tx1, x1), ty1))
 
                     image_counter += 1
-                    image_name = f"img_{part_id.text}_{image_counter}.{each.image_extension}"
+                    image_name = f"img_{element_id.text}_{image_counter}.{each.image_extension}"
                     image_path = os.path.join(fill_path_images, image_name)
-
+                    image_data = each.image_data
+                    image_extension = each.image_extension
                     with open(image_path, "wb") as img_file:
                         img_file.write(each.image_data)
 
             if image_counter == -1:
-                print(f"part number {part_id.text} without image !!!!!!!!")
+                print(f"element id {element_id.text} without image !!!!!!!!")
 
             amount = amount[:-1]
             if self.debug:
-                print(f"part number {part_id.text} , amount {amount}")
+                print(f"element id {element_id.text} , amount {amount}")
 
-            file.write(f"{part_id.text},{amount}\n")
+            # look for lego part id and color
+            filtered_df = self.df[self.df['element_id'] == element_id.text]
+            # Check if any match is found
+            if not filtered_df.empty:
+                part_num = filtered_df.iloc[0]['part_num']
+                color_id = filtered_df.iloc[0]['color_id']
+                # print("Part Number:", part_num)
+                # print("Color ID:", color_id)
+            else:
+                print("No matching element_id found.")
+
+            part = FinalPart(
+                image_data=image_data,
+                element_id=element_id.text,
+                part_num = part_num,
+                color_id = color_id
+            )
+
+            parts_ram_list.append(part)
+
+            file.write(f"{element_id.text},{image_extension},{amount},{part_num},{color_id}\n")
 
         file.close()
         print ("parts extracted successfully")
@@ -175,6 +257,8 @@ class PartsProcessor:
             key = cv2.waitKey(0) & 0xFF
             cv2.destroyWindow('parts_debug')
 
+        return parts_ram_list
+
 
 
 
@@ -184,8 +268,8 @@ class PartsProcessor:
 # inspect_pdf("Manuals/6208467.pdf",393) #393,394
 # inspect_pdf("Manuals/6566113.pdf",169) #169,170
 
-
-
+# pp = PartsProcessor()
+# pp.load_parts_list("processed/6186243")
 
 
 
