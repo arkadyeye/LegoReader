@@ -163,7 +163,7 @@ class PageProcessor:
                         y1 = rect[1] - 1
                         break
 
-            # make a few pixes before the number inside step area
+            # make a few pixels before the number inside step area
             x1 = x1 - 10
             steps.append((x1,y1,x2,y2))
 

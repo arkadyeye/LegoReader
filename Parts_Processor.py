@@ -118,7 +118,8 @@ class PartsProcessor:
             df = pd.read_csv(parts_path)
         except FileNotFoundError:
             print("Warning: The parts CSV file was not found.")
-            df = None  # or handle differently depending on your needs
+            return None  # or handle differently depending on your needs
+
 
         # inner function !! cool ?
         def load_image(row):

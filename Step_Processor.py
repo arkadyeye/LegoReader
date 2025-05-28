@@ -54,7 +54,7 @@ def rect_intersect(step_rect, target):
         return True
     return False
 
-
+min_acceptance_score = 0.85
 class StepProcessor:
     def __init__(self,step_font_size, parts_font_size):
         self.pdf_document = None
@@ -128,6 +128,8 @@ class StepProcessor:
         self.steps_rects = steps_rects
         self.parts_df = parts_df
 
+        parts_file = None
+
         for step in steps_rects:
             texts = self.__extract_relevant_text(step)
             images = self.__extract_relevant_images(step)
@@ -142,6 +144,11 @@ class StepProcessor:
                     folder = 's' + str(step_number)
                     folder = os.path.join(top_folder, folder)
                     os.makedirs(folder, exist_ok=True)
+
+                    # create a file for used parts list
+                    parts_file_path = os.path.join(folder, 'step_parts.csv')
+                    parts_file = open(parts_file_path, 'w')
+                    parts_file.write("element_id,amount,part_num,color_id\n")
                     break
 
             print(f"step number is: {step_number} , texts: {len(texts)} , images: {len(images)}")
@@ -177,52 +184,24 @@ class StepProcessor:
                                         max_matching_part = row
 
                             if max_matching_part is not None:
-                                print(f"Part {max_matching_part['element_id']}, score {max_score}")
-                                cv2.imshow('img_part', max_matching_part['image'])
-                                cv2.imshow('img_step', img_step)
-                                cv2.waitKey(0)
-                                cv2.destroyAllWindows()
+                                # print(f"Part {max_matching_part['element_id']}, score {max_score}")
 
-                            # for part in all_parts_list:
-                            #     if part.image_data is not None:
-                            #         nparr_parts = np.frombuffer(part.image_data, np.uint8)
-                            #         img_part = cv2.imdecode(nparr_parts, cv2.IMREAD_COLOR)
-                            #         score = self.__compare_images_ssim(img_part, img_step)
-                            #         if score > max_score:
-                            #             max_score = score
-                            #             max_matching_part = part
-                            #
-                            # if max_matching_part is not None:
-                            #     ttt = np.frombuffer(max_matching_part.image_data, np.uint8)
-                            #     img_part = cv2.imdecode(ttt, cv2.IMREAD_COLOR)
-                            #     print (f" part { max_matching_part.element_id} ,score {max_score}")
-                            #     cv2.imshow('img_part', img_part)
-                            #     cv2.imshow('img_step', img_step)
-                            #     cv2.waitKey(0)
-                            #     cv2.destroyAllWindows()
+                                if max_score > min_acceptance_score:
+                                    amount = text.text.replace('x','')
+                                    parts_file.write(f"{max_matching_part['element_id']},{amount},"
+                                                     f"{max_matching_part['part_num']},{max_matching_part['color_id']},\n")
+                                else:
+                                    print ("part match failed with score ",max_score)
 
+                                # cv2.imshow('img_part', max_matching_part['image'])
+                                # cv2.imshow('img_step', img_step)
+                                # cv2.waitKey(0)
+                                # cv2.destroyAllWindows()
 
-                            #
-                            # if all_parts_list:
-                            #     image_data = all_parts_list[5].image_data
-                            #     print ("image_data: ",image_data)
-                            #     nparr = np.frombuffer(image_data, np.uint8)
-                            #
-                            #     # Decode image
-                            #     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)  # or IMREAD_UNCHANGED for alpha channel
-                            #
-                            #     # Display the image
-                            #     cv2.imshow('Image', img)
-                            #     cv2.waitKey(0)
-                            #     cv2.destroyAllWindows()
 
                             continue
 
-
-                            # print("parts amount: ", text.text[:-1])
-
-                # else:
-                #     print ("unknown text: ",text.text)
+            parts_file.close()
 
             # get the biggest image. it's probably the step image
             sorted_images = sorted(images, key=get_area, reverse=True)
@@ -245,7 +224,6 @@ class StepProcessor:
                     with open(image_path, "wb") as img_file:
                         img_file.write(each.image_data)
 
-        print ("export done")
 
 
 

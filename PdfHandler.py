@@ -7,7 +7,7 @@ import fitz  # PyMuPDF
 import cv2
 import numpy as np
 
-import PageProcessor
+import Page_Processor
 import Parts_Processor
 import Step_Processor
 
@@ -32,11 +32,11 @@ class PdfHandler:
         self.steps_numbers = None
         self.partslist_numbers = None
 
-        self.pp = PageProcessor.PageProcessor(debug = False)
+        self.page_processor = Page_Processor.PageProcessor(debug = False)
         self.parts_processor = Parts_Processor.PartsProcessor(debug = False)
         self.all_parts_df = None
 
-        self.sp = None
+        self.step_processor = None
         self.instruction_step_font_size = None
         self.parts_font_size = None
 
@@ -61,7 +61,7 @@ class PdfHandler:
             self.irrelevant_pages.clear()
             self.instruction_step_font_size = 26 # default value
             self.parts_font_size = 8 #default value
-            self.sp = Step_Processor.StepProcessor(self.instruction_step_font_size,self.parts_font_size)
+            self.step_processor = Step_Processor.StepProcessor(self.instruction_step_font_size, self.parts_font_size)
             self.meta_loaded = False
 
             meta_name = pdf_name.replace("pdf", "meta")
@@ -75,12 +75,12 @@ class PdfHandler:
                     meta = json.load(f)
 
                     self.instruction_step_font_size = meta["step_font_size"]
-                    self.sp = Step_Processor.StepProcessor(self.instruction_step_font_size,self.parts_font_size)
+                    self.step_processor = Step_Processor.StepProcessor(self.instruction_step_font_size, self.parts_font_size)
 
-                    self.pp.set_parts_list_color(np.array(meta["parts_list_color"]))
+                    self.page_processor.set_parts_list_color(np.array(meta["parts_list_color"]))
 
                     if meta["sub_step_color"] != "n/a":
-                        self.pp.set_sub_step_color(np.array(meta["sub_step_color"]))
+                        self.page_processor.set_sub_step_color(np.array(meta["sub_step_color"]))
 
                     if meta["irrelevant_pages"] != "n/a":
                         self.irrelevant_pages = set(meta["irrelevant_pages"])
@@ -131,6 +131,9 @@ class PdfHandler:
         tmp = self.current_page_index + 1
         while tmp in self.irrelevant_pages:
             tmp += 1
+            # allow circular paging
+            if tmp == self.actual_page_count:
+                tmp = 0
 
         if tmp < self.actual_page_count:
             self.current_page_index = tmp
@@ -142,6 +145,10 @@ class PdfHandler:
         tmp = self.current_page_index - 1
         while tmp in self.irrelevant_pages:
             tmp -= 1
+            # allow circular paging
+            if tmp == -1:
+                tmp = self.actual_page_count-1
+
 
         if tmp >= 0:
             self.current_page_index = tmp
@@ -160,7 +167,7 @@ class PdfHandler:
         res = self.__get_step_font_size__(xc,yc)
         if res:
             self.instruction_step_font_size = res
-            self.sp = Step_Processor.StepProcessor(self.instruction_step_font_size,self.parts_font_size)
+            self.step_processor = Step_Processor.StepProcessor(self.instruction_step_font_size, self.parts_font_size)
             print ("Font size set to: ",res)
         else:
             warnings.warn("failed font selection")
@@ -171,10 +178,10 @@ class PdfHandler:
         '''
 
     def set_parts_list_color(self, color):
-        self.pp.set_parts_list_color(color)
+        self.page_processor.set_parts_list_color(color)
 
     def set_sub_step_color(self, color):
-        self.pp.set_sub_step_color(color)
+        self.page_processor.set_sub_step_color(color)
 
     def do_parts_page(self):
         # don't forget top folder
@@ -195,13 +202,13 @@ class PdfHandler:
 
         # here I want to save meta file
         #if we have at least step font size, and parts list - we are good to go
-        if self.instruction_step_font_size and self.pp.parts_list_color is not None:
+        if self.instruction_step_font_size and self.page_processor.parts_list_color is not None:
             meta = {}
             meta["step_font_size"] = self.instruction_step_font_size
-            meta["parts_list_color"] = self.pp.parts_list_color.tolist()
+            meta["parts_list_color"] = self.page_processor.parts_list_color.tolist()
 
-            if self.pp.sub_step_color is not None:
-                meta["sub_step_color"] = self.pp.sub_step_color.tolist()
+            if self.page_processor.sub_step_color is not None:
+                meta["sub_step_color"] = self.page_processor.sub_step_color.tolist()
             else:
                 meta["sub_step_color"] = "n/a"
 
@@ -250,10 +257,10 @@ class PdfHandler:
 
     def __process_page__(self):
 
-        self.parts_list = self.pp.detect_parts_list(self.current_page_jpeg,self.partslist_numbers)
-        self.sub_module_list = self.pp.detect_sub_steps(self.current_page_jpeg)
+        self.parts_list = self.page_processor.detect_parts_list(self.current_page_jpeg, self.partslist_numbers)
+        self.sub_module_list = self.page_processor.detect_sub_steps(self.current_page_jpeg)
 
-        self.steps_area = self.pp.detect_steps_area(self.steps_numbers,self.parts_list,self.pdf_size)
+        self.steps_area = self.page_processor.detect_steps_area(self.steps_numbers, self.parts_list, self.pdf_size)
 
     def extracts_steps(self):
         '''
@@ -261,7 +268,7 @@ class PdfHandler:
         theoreticly, i have to get an object, contains all step element, because i've already found them in detect_Steps_area
 
         '''
-        if self.sp:
+        if self.step_processor:
 
             # print (self.all_parts_list[5])
 
@@ -275,7 +282,7 @@ class PdfHandler:
                     self.__update_page_image__()
                     self.__extract_pdf_page__()
                     self.__process_page__()
-                    self.sp.extract_step(target_folder, self.pdf_document, i, self.steps_area, self.all_parts_df)
+                    self.step_processor.extract_step(target_folder, self.pdf_document, i, self.steps_area, self.all_parts_df)
         else:
             warnings.warn("failed to run step extractor. font not set ?")
 
