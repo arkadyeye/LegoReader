@@ -38,6 +38,7 @@ class PdfHandler:
 
         self.step_processor = None
         self.instruction_step_font_size = None
+        self.numbered_substep_font_size = None
         self.parts_font_size = None
 
         self.parts_list = None
@@ -60,8 +61,9 @@ class PdfHandler:
 
             self.irrelevant_pages.clear()
             self.instruction_step_font_size = 26 # default value
+            self.numbered_substep_font_size = 22
             self.parts_font_size = 8 #default value
-            self.step_processor = Step_Processor.StepProcessor(self.instruction_step_font_size, self.parts_font_size)
+            self.step_processor = Step_Processor.StepProcessor(self)
             self.meta_loaded = False
 
             meta_name = pdf_name.replace("pdf", "meta")
@@ -75,9 +77,13 @@ class PdfHandler:
                     meta = json.load(f)
 
                     self.instruction_step_font_size = meta["step_font_size"]
-                    self.step_processor = Step_Processor.StepProcessor(self.instruction_step_font_size, self.parts_font_size)
+
+                    self.step_processor = Step_Processor.StepProcessor(self)
 
                     self.page_processor.set_parts_list_color(np.array(meta["parts_list_color"]))
+
+                    if meta["numbered_substep_font_size"] != "n/a":
+                        self.numbered_substep_font_size = meta["numbered_substep_font_size"]
 
                     if meta["sub_step_color"] != "n/a":
                         self.page_processor.set_sub_step_color(np.array(meta["sub_step_color"]))
@@ -160,17 +166,26 @@ class PdfHandler:
         self.irrelevant_pages.add(self.current_page_index)
         # self.actual_page_count -= 1
 
-    def set_step_font_rect(self,ref_point):
+    def set_font_rect(self,ref_point,font_class):
         (x1, y1), (x2, y2) = ref_point
         xc = x1 + (x2-x1)/2
         yc = y1 + (y2-y1)/2
         res = self.__get_step_font_size__(xc,yc)
         if res:
-            self.instruction_step_font_size = res
-            self.step_processor = Step_Processor.StepProcessor(self.instruction_step_font_size, self.parts_font_size)
-            print ("Font size set to: ",res)
+            if font_class == "steps":
+                self.instruction_step_font_size = res
+            elif font_class == "numbered_substep":
+                self.numbered_substep_font_size = res
+            # elif font_class == "rounded_substep":
+            #     self.numbered_substep_font_size = res
+            elif font_class == "parts":
+                self.parts_font_size = res
+
+            self.step_processor = Step_Processor.StepProcessor(self)
+            print (font_class + " font size set to: ",res)
         else:
             warnings.warn("failed font selection")
+
         '''
         here we got a rect with some step num. we have to find the closest rect
         so actualy we need a center of this rect, and centers of all other
@@ -196,34 +211,37 @@ class PdfHandler:
         self.__extract_pdf_page__()
         self.__process_page__()
 
-    def close(self):
+    def close(self, save_meta):
         if self.pdf_document:
             self.pdf_document.close()
 
         # here I want to save meta file
         #if we have at least step font size, and parts list - we are good to go
-        if self.instruction_step_font_size and self.page_processor.parts_list_color is not None:
-            meta = {}
-            meta["step_font_size"] = self.instruction_step_font_size
-            meta["parts_list_color"] = self.page_processor.parts_list_color.tolist()
+        if save_meta:
+            if self.instruction_step_font_size and self.page_processor.parts_list_color is not None:
+                meta = {}
+                meta["step_font_size"] = self.instruction_step_font_size
+                meta["parts_list_color"] = self.page_processor.parts_list_color.tolist()
+                meta["numbered_substep_font_size"] = self.numbered_substep_font_size
 
-            if self.page_processor.sub_step_color is not None:
-                meta["sub_step_color"] = self.page_processor.sub_step_color.tolist()
-            else:
-                meta["sub_step_color"] = "n/a"
 
-            if len(self.irrelevant_pages) != 0:
-                meta["irrelevant_pages"] = list(self.irrelevant_pages)
-            else:
-                meta["irrelevant_pages"] = "n/a"
+                if self.page_processor.sub_step_color is not None:
+                    meta["sub_step_color"] = self.page_processor.sub_step_color.tolist()
+                else:
+                    meta["sub_step_color"] = "n/a"
 
-            meta_name = self.pdf_name.replace("pdf", "meta")
-            meta_path = os.path.join(self.export_folder, meta_name)
-            meta_path = os.path.join(top_folder, meta_path)
-            print ("metadata: ",meta_path)
+                if len(self.irrelevant_pages) != 0:
+                    meta["irrelevant_pages"] = list(self.irrelevant_pages)
+                else:
+                    meta["irrelevant_pages"] = "n/a"
 
-            with open(meta_path, "w") as f:
-                json.dump(meta, f, indent=4)
+                meta_name = self.pdf_name.replace("pdf", "meta")
+                meta_path = os.path.join(self.export_folder, meta_name)
+                meta_path = os.path.join(top_folder, meta_path)
+                print ("metadata: ",meta_path)
+
+                with open(meta_path, "w") as f:
+                    json.dump(meta, f, indent=4)
 
 
     def __extract_pdf_page__(self):
@@ -232,6 +250,7 @@ class PdfHandler:
         # get steps numbers
         steps = []
         list_numbers = []
+        numbered_substeps_number = []
 
         # get texts from PDF
         for block in self.current_page_pdf.get_text("dict")["blocks"]:
@@ -245,6 +264,9 @@ class PdfHandler:
                         # get step numbers by size
                         if self.instruction_step_font_size and font_size == self.instruction_step_font_size:
                             steps.append((text, pos))
+
+                        if self.numbered_substep_font_size and font_size == self.numbered_substep_font_size:
+                            numbered_substeps_number.append((text,pos))
 
                         # get parts list numbers by size
                         if font_size == 8 and 'x' in text:  # means it's parts font
@@ -261,6 +283,14 @@ class PdfHandler:
         self.sub_module_list = self.page_processor.detect_sub_steps(self.current_page_jpeg)
 
         self.steps_area = self.page_processor.detect_steps_area(self.steps_numbers, self.parts_list, self.pdf_size)
+
+    def extract_one_step(self):
+        print("sub modules:", len(self.sub_module_list))
+
+        target_folder = os.path.join(top_folder, self.export_folder)
+        self.step_processor.extract_step(target_folder, self.pdf_document, self.current_page_index,
+                                         self.steps_area, self.all_parts_df,self.sub_module_list)
+
 
     def extracts_steps(self):
         '''
@@ -282,7 +312,10 @@ class PdfHandler:
                     self.__update_page_image__()
                     self.__extract_pdf_page__()
                     self.__process_page__()
-                    self.step_processor.extract_step(target_folder, self.pdf_document, i, self.steps_area, self.all_parts_df)
+
+                    print ("sub modules:", len(self.sub_module_list))
+
+                    self.step_processor.extract_step(target_folder, self.pdf_document, i, self.steps_area, self.all_parts_df,None)
         else:
             warnings.warn("failed to run step extractor. font not set ?")
 

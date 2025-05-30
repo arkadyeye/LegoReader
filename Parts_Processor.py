@@ -169,7 +169,7 @@ class PartsProcessor:
         os.makedirs(fill_path_images, exist_ok=True)
         parts_path = os.path.join(fill_path, "parts.txt")
 
-        file = open(parts_path, 'w')
+        file = open(parts_path, 'a') # append, because they may be more than 1 parts page
         file.write("element_id,ext,amount,part_num,color_id\n")
 
         #this list used for debug

@@ -71,6 +71,8 @@ class PageProcessor:
                     if x1 < x1x < x2 and y1 < y1x < y2 :
                         validated_parts_list.append(parts_list_candidate)
 
+            # validated_parts_list = parts_list_candidates
+
             return validated_parts_list
 
 

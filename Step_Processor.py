@@ -54,14 +54,20 @@ def rect_intersect(step_rect, target):
         return True
     return False
 
-min_acceptance_score = 0.85
+min_acceptance_score = 0.8
 class StepProcessor:
-    def __init__(self,step_font_size, parts_font_size):
+    def __init__(self,caller):
+        self.submodules_rects = None
+        self.parts_df = None
+
         self.pdf_document = None
         self.pdf_page = None
         self.steps_rects = None
-        self.step_font_size = step_font_size
-        self.parts_font_size = parts_font_size
+        self.step_font_size = caller.instruction_step_font_size
+        self.parts_font_size = caller.parts_font_size
+        self.numbered_substep_font_size = caller.numbered_substep_font_size
+
+
 
     def __extract_relevant_images(self,step_rect):
         # --- Images ---
@@ -122,20 +128,54 @@ class StepProcessor:
         score, _ = ssim(gray1, gray2, full=True)
         return score
 
-    def extract_step(self,top_folder,pdf_document, page_number, steps_rects,parts_df):
+    def extract_step(self,top_folder,pdf_document, page_number, steps_rects,parts_df,submodules_rects):
         self.pdf_document = pdf_document
         self.pdf_page = pdf_document[page_number]
         self.steps_rects = steps_rects
         self.parts_df = parts_df
+        self.submodules_rects = submodules_rects
+
+        # print ("steps: ",steps_rects)
+        # print ("submodules: ",submodules_rects)
 
         parts_file = None
 
-        for step in steps_rects:
+        for step in self.steps_rects:
             texts = self.__extract_relevant_text(step)
             images = self.__extract_relevant_images(step)
 
+            #get relevant submodules (they are rects, not objects)
+            submodules = []
+            for each_submodule in submodules_rects:
+                if rect_intersect(step, each_submodule):
+                    submodules.append(each_submodule)
+
+            print ("submodules: ",submodules)
+            '''
+            in each step may be more than one submodule. and they may not have numbers
+            actualy, they will not have numbers if they are rounded submodules
+            '''
+
+
+
+            # nado proverit' ot kakogo shaga etot sub modul.
+            # potomu chto na stranitze est' 2 shaga. no submodule tol'ko v odnom iz nih
+            #
+            # kstati. na stranitze mogut bit 2 sabmodula ot dvuh raznih shagov. a mogut bit i ot odnogo
+            #
+            # kak bi tak sdelat' chtobi submodule obrabativalsya takje kak i prosto modul
+
+            # if self.submodules_rects:
+            #     submodule_images = self.__extract_relevant_submodule_images(submodules_rects[0])
+            #     print ("submodule_images",submodule_images)
+
+            # !!!!!!!!!!!1__extract_relevant_sub_module
+
             step_number = 0
             image_counter = 0
+
+            # !!! somehow, we should address sub,and sub-sub steps here
+            # and do remove used text and images, so they don't interfer'
 
             # get step number, used for the folder name
             for text in texts:
@@ -152,6 +192,8 @@ class StepProcessor:
                     break
 
             print(f"step number is: {step_number} , texts: {len(texts)} , images: {len(images)}")
+
+
             # get amount of parts,and pictures
             for text in texts:
                 if text.font == self.parts_font_size and 'x' in text.text:
@@ -211,6 +253,47 @@ class StepProcessor:
             sorted_images[0].used = True
             with open(image_path, "wb") as img_file:
                 img_file.write(sorted_images[0].image_data)
+
+
+            # here we left with unused images, that are probably from the submodule
+            for i,submodule in enumerate(submodules):
+
+                # i want to use the same images array, so we left with true unused images
+                submodule_images = []
+                for image in sorted_images:
+                    image_rec = image.pos
+                    if rect_intersect(submodule, image_rec):
+                        submodule_images.append(image)
+
+
+
+                submodule_texts = self.__extract_relevant_text(submodule)
+
+                #create subfolder
+                subfolder_path = os.path.join(folder, "sub"+str(i))
+                os.makedirs(subfolder_path, exist_ok=True)
+
+                #write all images here
+                image_counter = 0
+                for each in submodule_images:
+
+                    image_name = f"sub_{image_counter}.{each.image_extension}"
+                    image_counter += 1
+                    image_path = os.path.join(subfolder_path, image_name)
+                    each.used = True
+                    with open(image_path, "wb") as img_file:
+                        img_file.write(each.image_data)
+
+                remarks = []
+                for each in submodule_texts:
+                    remarks.append(each.text)
+
+                if remarks:
+                    text = ', '.join(remarks)
+                    image_path = os.path.join(subfolder_path, "remarks.txt")
+                    with open(image_path, "w") as txt_file:
+                        txt_file.write(text)
+
 
             # get all unused images
             image_counter = 0

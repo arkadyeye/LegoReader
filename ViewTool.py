@@ -127,7 +127,14 @@ class LegoInstructionParser:
 
             key = cv2.waitKey(0) & 0xFF
 
-            if key in [ord('q'), 27]:  # 'q' or Esc to quit
+            # print ("key is",key)
+
+            if key == ord('q'):  # 'q' or Esc to quit
+                self.pdf_handler.close(save_meta=True)
+                break
+
+            elif key == 27:  # Esc
+                self.pdf_handler.close(save_meta=False)
                 break
 
             elif key == 81:  # Left arrow
@@ -146,14 +153,28 @@ class LegoInstructionParser:
                 self.pdf_handler.do_parts_page()
 
             elif key ==  ord('e'):  # 'e' for step extractions
+                self.pdf_handler.extract_one_step()
+
+
+            elif key ==  ord('3'):  # 'e' for step extractions
                 self.pdf_handler.extracts_steps()
 
-            elif key in [ord('l'),ord('s'),ord('f')] and self.ref_point:  # 'l' for list of parts, s for sub step, f for step font
+
+            elif key in [ord('l'),ord('s'),ord('f'), ord('d')] and self.ref_point:
+                # 'l' for list of parts, s for sub step,
+                #  f for step font, d for numbered sub step font ?
                 (x1, y1), (x2, y2) = self.ref_point
                 if key == ord('f'):
-                    self.pdf_handler.set_step_font_rect(self.ref_point)
+                    self.pdf_handler.set_font_rect(self.ref_point,"steps")
                     self.ref_point = []
                     continue
+
+                if key == ord('d'):
+                    self.pdf_handler.set_font_rect(self.ref_point,"numbered_substep")
+                    self.ref_point = []
+                    continue
+
+
 
                 current_jpeg = self.pdf_handler.get_img()
                 roi = current_jpeg[min(y1, y2):max(y1, y2), min(x1, x2):max(x1, x2)]
@@ -169,14 +190,15 @@ class LegoInstructionParser:
                     continue
 
         cv2.destroyAllWindows()
-        self.pdf_handler.close()
+
         # if self.pdf_document:
         #     self.pdf_document.close()
 
 if __name__ == "__main__":
     parser = LegoInstructionParser()
     # parser.run("Manuals/10698_X_Castle.pdf")
-    parser.run("6186243.pdf")
+    # parser.run("6186243.pdf") # small buggy
     # parser.run("6217542.pdf")
-    # parser.run("Manuals/6420974.pdf")
-    # parser.run("6420974.pdf")
+    # parser.run("6420974.pdf") # 6 wheels "kvadrazikl"
+    parser.run("6208467.pdf") # extreme explorer
+    # parser.run("4520728.pdf") # old nxt
