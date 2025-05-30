@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import os
 
+import Page_Processor_v2
 import PdfHandler
 
 #######
@@ -10,7 +11,7 @@ manuals_folder = "Manuals"
 #######
 
 
-zoom = 1.5
+zoom = 1
 def show_zoomed_image(window_name, cv_image):
     height, width = cv_image.shape[:2]
     new_size = (int(width * zoom), int(height * zoom))
@@ -159,6 +160,15 @@ class LegoInstructionParser:
             elif key ==  ord('3'):  # 'e' for step extractions
                 self.pdf_handler.extracts_steps()
 
+            elif key ==  ord('z'):  # 'e' for step extractions
+                page_processor_v2 = Page_Processor_v2.PageProcessor(debug_level=2)
+
+
+                #!!!!!!!! here, a full file path should be added to meta. so we know where to put results
+
+                page_processor_v2.set_meta({})
+                page_processor_v2.prepare_page(self.pdf_handler.pdf_document,self.pdf_handler.current_page_index)
+
 
             elif key in [ord('l'),ord('s'),ord('f'), ord('d')] and self.ref_point:
                 # 'l' for list of parts, s for sub step,
@@ -199,6 +209,7 @@ if __name__ == "__main__":
     # parser.run("Manuals/10698_X_Castle.pdf")
     # parser.run("6186243.pdf") # small buggy
     # parser.run("6217542.pdf")
-    # parser.run("6420974.pdf") # 6 wheels "kvadrazikl"
-    parser.run("6208467.pdf") # extreme explorer
+    parser.run("6420974.pdf") # 6 wheels "kvadrazikl"
+    # parser.run("6208467.pdf") # extreme explorer
     # parser.run("4520728.pdf") # old nxt
+

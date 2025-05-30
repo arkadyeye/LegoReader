@@ -48,7 +48,6 @@ def rect_intersect(step_rect, target):
     step_x0, step_y0, step_x1, step_y1 = step_rect
     tar_x0, tar_y0, tar_x1, tar_y1 = target
 
-    # If one rectangle is to the left of the other
     if ((step_x0 <= tar_x0 <= step_x1 or step_x0 <= tar_x1 <= step_x1) and
             (step_y0 <= tar_y0 <= step_y1 or step_y0 <= tar_y1 <= step_y1)):
         return True
@@ -255,8 +254,29 @@ class StepProcessor:
                 img_file.write(sorted_images[0].image_data)
 
 
+
+
+
             # here we left with unused images, that are probably from the submodule
             for i,submodule in enumerate(submodules):
+
+                '''
+                up to here, we parsed the main step ----------- start submodule
+                rounded submodule can be with with numbers, but also can be without.
+                and can be with '2x'.
+
+                if there is _x, it probably should be in submodule name
+                '''
+
+                submodule_texts = self.__extract_relevant_text(submodule)
+                submodule_multiplier = "1x"
+                if submodule_texts:
+                    # look for _x text
+                    for text in submodule_texts:
+                        if 'x' in text.text:
+                            submodule_multiplier = text.text
+
+
 
                 # i want to use the same images array, so we left with true unused images
                 submodule_images = []
@@ -266,11 +286,8 @@ class StepProcessor:
                         submodule_images.append(image)
 
 
-
-                submodule_texts = self.__extract_relevant_text(submodule)
-
                 #create subfolder
-                subfolder_path = os.path.join(folder, "sub"+str(i))
+                subfolder_path = os.path.join(folder, "sub"+str(i)+"_"+submodule_multiplier)
                 os.makedirs(subfolder_path, exist_ok=True)
 
                 #write all images here
