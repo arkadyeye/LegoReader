@@ -178,7 +178,7 @@ class StepProcessor:
 
             # get step number, used for the folder name
             for text in texts:
-                if text.font == self.step_font_size:
+                if text.font_size == self.step_font_size:
                     step_number = text.text
                     folder = 's' + str(step_number)
                     folder = os.path.join(top_folder, folder)
@@ -195,7 +195,7 @@ class StepProcessor:
 
             # get amount of parts,and pictures
             for text in texts:
-                if text.font == self.parts_font_size and 'x' in text.text:
+                if text.font_size == self.parts_font_size and 'x' in text.text:
                     # here we should get the images of required parts
                     tx0, ty0, tx1, ty1 = text.pos
                     image_counter += 1
