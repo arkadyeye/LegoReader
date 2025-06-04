@@ -20,6 +20,8 @@ then go to images and get:
 """
 
 import os
+import warnings
+
 import fitz  # PyMuPDF
 from dataclasses import dataclass
 from typing import Literal, Optional, Tuple, List, Union, Self
@@ -106,8 +108,10 @@ def rect_center_distance(rect1, rect2):
     center1_y = (y0_1 + y1_1) / 2
 
     # Calculate center of rect2
-    center2_x = (x0_2 + x1_2) / 2
-    center2_y = (y0_2 + y1_2) / 2
+    # center2_x = (x0_2 + x1_2) / 2
+    # center2_y = (y0_2 + y1_2) / 2
+    center2_x = x0_2
+    center2_y = y0_2
 
     # Calculate Euclidean distance
     distance = math.sqrt((center2_x - center1_x) ** 2 + (center2_y - center1_y) ** 2)
@@ -186,12 +190,8 @@ class StepProcessor:
                         relevant_texts.append(text)
 
                 # check for images inside parts frame
-
-
                 for image in page_processor.images_list:
                     if image.used: continue
-                    # print ("step_block.step_frame: ",step_block.step_frame)
-                    # print ("image.xref: ",image.xref)
                     if rect_intersect(step_block.step_frame, image.pos):
                         relevant_images.append(image)
 
@@ -205,21 +205,21 @@ class StepProcessor:
 
                 # check for framed sub steps
                 # we have to do it in the step loop, so relevant images will be relevant
+                framed_sub_steps = []
                 if page_processor.framed_sub_steps_list:
                     for frame in page_processor.framed_sub_steps_list:
-                        if rect_inside(step_block.step_frame,frame.pos):
+                        if rect_intersect(step_block.step_frame,frame.pos):
                             if not step_block.sub_steps:
                                 step_block.sub_steps = []
 
-                            res = self.__process_frame(page_processor,frame,relevant_images)
-                            step_block.sub_steps.extend(res)
+                            framed_sub_steps.extend(self.__process_frame(page_processor,frame,relevant_images))
 
 
-            # maybe this loop should be one step inside
+                # step_block.sub_steps.extend(framed_sub_steps)
 
-            # for each step area, check if there is numbered sub steps
-            if page_processor.numbered_sub_module_texts:
-                for step_block in step_blocks:
+                # for each step area, check if there is numbered sub steps
+                numbered_steps = []
+                if page_processor.numbered_sub_module_texts:
 
                     relevant_page_sub_module_text = []
                     relevant_page_sub_module_images = []
@@ -235,13 +235,14 @@ class StepProcessor:
                         if image.used: continue
 
                         #if image is inside framed submodule, skip
-                        image_found = False
-                        for sub_frame in page_processor.framed_sub_steps_list:
-                            if rect_intersect(sub_frame.pos,image.pos):
-                                # print ("droping image: ",image.xref)
-                                image_found = True
-
-                        if image_found: continue
+                        # update: we already found sub frames, so this can be skiped
+                        # image_found = False
+                        # for sub_frame in page_processor.framed_sub_steps_list:
+                        #     if rect_intersect(sub_frame.pos,image.pos):
+                        #         # print ("droping image: ",image.xref)
+                        #         image_found = True
+                        #
+                        # if image_found: continue
 
                         # if image is too small - skip it
                         x0, y0, x1, y1 = image.pos
@@ -255,9 +256,35 @@ class StepProcessor:
                             relevant_page_sub_module_images.append(image)
 
                     # find the area of each step
-                    step_block.sub_steps = self.__detect_page_submodule(relevant_page_sub_module_text,
+                    numbered_steps = self.__detect_page_submodule(relevant_page_sub_module_text,
                                                                      relevant_page_sub_module_images)
 
+                #
+                # print ("framed_sub_steps",framed_sub_steps)
+                # print("numbered_steps", numbered_steps)
+
+                if not framed_sub_steps and numbered_steps:
+                    step_block.sub_steps = numbered_steps
+                elif framed_sub_steps and not numbered_steps:
+                    step_block.sub_steps = framed_sub_steps
+                else:
+                    # here we have both numbered and sub.
+                    # so we need to find for each frame, to what numbered step it belongs
+                    for frame in framed_sub_steps:
+                        min_dist = 10000
+                        min_numbered_step = None
+                        for numbered_step in numbered_steps:
+                            dist = rect_center_distance(numbered_step.step_frame, frame.step_frame)
+                            if dist < min_dist:
+                                min_dist = dist
+                                min_numbered_step = numbered_step
+
+                        if min_numbered_step.sub_steps is None:
+                            min_numbered_step.sub_steps = []
+                        min_numbered_step.sub_steps.append(frame)
+
+                    step_block.sub_steps = numbered_steps
+                #
             #------------
             # now we have a steps, with some numbered sub_steps inside
             # the question is - do we have framed substeps ?
@@ -584,8 +611,6 @@ class StepProcessor:
         frame_relevant_texts = []
         frame_relevant_images = []
 
-        print ("starting new frame",frame)
-
         # start with images, they exist for sure
         for image in relevant_images:
 
@@ -597,12 +622,24 @@ class StepProcessor:
 
             if rect_inside(frame.pos, image.pos):
                 frame_relevant_images.append(image)
-                print("relevant image found", image.xref)
 
+        print ("page_processor.frame_sub_module_texts: ",page_processor.frame_sub_module_texts)
+
+        frame_multiplier = 1
         for text in page_processor.frame_sub_module_texts:
             if rect_inside(frame.pos, text.pos):
-                frame_relevant_texts.append(text)
-                print ("relevant text found",text)
+                # a unique case: _x can be in frame. we can assume only one text of this form
+                if 'x' in text.text:
+                    frame_multiplier = int(text.text[:-1])
+                else:
+                    frame_relevant_texts.append(text)
+
+        # check for sub sub frame
+        sub_sub_block = None
+        for sub_frame in page_processor.other_frames_list:
+            if rect_inside(frame.pos,sub_frame.pos):
+                print ("FOUND A SUB SUB FRAME")
+                sub_sub_block = self.__process_sub_sub_block(sub_frame,frame_relevant_images)
 
         if not frame_relevant_texts: # means no text in frame
             # 1) just get the image
@@ -612,8 +649,13 @@ class StepProcessor:
                 type="sub_step",
                 step_num=0,
                 final_image_block = frame_relevant_images[0],
-                step_frame=frame.pos
+                step_frame=frame.pos,
+                multiplier = frame_multiplier
                 )
+
+            if sub_sub_block:
+                frame_sub_step_block.sub_steps = [sub_sub_block]
+
             frame_blocks.append(frame_sub_step_block)
             return frame_blocks
 
@@ -641,10 +683,10 @@ class StepProcessor:
 
                 min_image.used = True
 
-                print ("text: ",step_text.text)
-                print ("min_dist: ",min_dist)
-                print("xref: ", min_image.xref)
-                print(" -------- \n\n")
+                # print ("text: ",step_text.text)
+                # print ("min_dist: ",min_dist)
+                # print("xref: ", min_image.xref)
+                # print(" -------- \n\n")
 
                 tx, ty, tx1, ty1 = step_text.pos
                 ix, iy, ix1, iy1 = min_image.pos
@@ -652,27 +694,62 @@ class StepProcessor:
                 frame_sub_step_block = StepBlock(
                     type="sub_step",
                     step_num=int(step_text.text),
-                    step_frame=(min(tx, ix), min(ty, iy), max(tx1, ix1), max(ty1, iy1))
+                    step_frame=(min(tx, ix), min(ty, iy), max(tx1, ix1), max(ty1, iy1)),
+                    final_image_block = min_image,
+                    multiplier = frame_multiplier
                 )
 
                 frame_blocks.append(frame_sub_step_block)
 
-                ## nado ponyat chto s sub sub module
+            # here we have all frame sub steps.
+            # if we do have a sub sub step, we should find the closes sub step to it
+            if sub_sub_block:
+                min_dist = 10000
+                min_frame = None
+                for frame in frame_blocks:
+                    dist = rect_center_distance(frame.step_frame, sub_sub_block.step_frame)
+                    print ("dist: ",dist)
+                    if min_dist > dist:
+                        min_dist = dist
+                        min_frame = frame
+
+                print ("min_frame: ",min_frame)
+                min_frame.sub_steps = [sub_sub_block]
 
             return frame_blocks
 
 
-            #
-            # #fist case: we have only one image, no step number
-            # if not page_processor.frame_sub_module_texts:
-            #     frame_sub_step_block = StepBlock(
-            #         type="sub_step",
-            #         step_num=0,
-            #         # step_frame=(min(tx, ix), min(ty, iy), max(tx1, ix1), max(ty1, iy1))
-            #     )
-
 
         # check for multiplier
+
+    def __process_sub_sub_block(self,sub_sub_frame, relevant_images):
+        '''
+
+         ok, so here is relevantly simple block. it has a frame, and maybe a few images
+         if there is only one image - it's probably ok.
+         if more - put a warning. its probably some unique case, that should be fixed manually
+
+         may it has '2x' ? no idea. let's say that not, till i found it wrong
+
+        '''
+        sub_sub_images = []
+        for image in relevant_images:
+            if rect_inside(sub_sub_frame.pos,image.pos):
+                image.used = True
+                sub_sub_images.append(image)
+
+        if len(sub_sub_images) > 1:
+            warnings.warn("sub sub frame has multiple images. expected ONLY one")
+
+        sub_sub_block = StepBlock(
+            type="sub_step",
+            step_num=int(0),
+            step_frame=sub_sub_frame.pos,
+            final_image_block = sub_sub_images[0]
+        )
+
+        return sub_sub_block
+
 
     def __show_debug_frames(self, page_image,step_blocks):
         '''
@@ -714,6 +791,10 @@ class StepProcessor:
             #     x0, y0, x1, y1 = rotate_icon
             #     cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (0, 0, 255), 2)
 
+            # actually, we have a full step. it may have numbered steps, stat may have frame steps, that may have sub step
+            # step -> numbered_step -> frame_step -> frame_sub_step
+            # it's clearly recursive ,but I will make it quick and dirty, because the max depth is 'only' 4
+
             # draw steps
             for step in step_blocks:
                 x0, y0, x1, y1 = step.step_frame
@@ -722,7 +803,19 @@ class StepProcessor:
                 if step.sub_steps:
                     for sub_step in step.sub_steps:
                         x0, y0, x1, y1 = sub_step.step_frame
-                        cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (0, 128, 128), 2)
+                        cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (0, 255, 0), 2)
+
+                        if sub_step.sub_steps:
+                            for sub_step2 in sub_step.sub_steps:
+                                x0, y0, x1, y1 = sub_step2.step_frame
+                                cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (0, 128, 255), 2)
+
+                                if sub_step2.sub_steps:
+                                    for sub_step3 in sub_step2.sub_steps:
+                                        x0, y0, x1, y1 = sub_step3.step_frame
+                                        cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (0, 0, 255), 2)
+
+                                # and here also can be a sub sub module
 
             cv2.imshow("basic_debug", working_page_basic)
 
