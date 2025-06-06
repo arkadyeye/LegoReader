@@ -37,6 +37,7 @@ class ContentBlock:
     image_extension: Optional[str] = None               # e.g., 'png', 'jpg'
     xref: Optional[str] = None
     image_bytes: Optional[bytes] = None  # binary image data
+    image_name: Optional[str] = None
 
     used: bool = False  # Default to unused
 
@@ -135,6 +136,8 @@ class PageProcessor:
 
         self.page_image = None
 
+        self.rotate_icon_img = None
+
     def set_meta(self,meta_dict):
 
         self.step_font_size = meta_dict.get('step_font_size',26)
@@ -147,6 +150,8 @@ class PageProcessor:
         # self.sub_sub_step_color = meta_dict.get('step_font_size',None)
         self.parts_list_color = meta_dict.get('parts_list_color',[242,215,182])
         # self.parts_list_color = meta_dict.get('parts_list_color', [255,255,255])
+
+        self.rotate_icon_img = cv2.imread('rotate_v2.png')
 
     def prepare_page(self,pdf_doc,page_index):
         '''
@@ -254,7 +259,7 @@ class PageProcessor:
         self.other_frames_list = self.__get_frames_locations(page_image, self.parts_list_color)
 
         # get rotation icon
-        self.rotate_icons_list = self.__get_rotate_icon_location(page_image)
+        self.rotate_icons_list = self.__get_rotate_icon_location(page_image,self.rotate_icon_img)
 
 
 
@@ -425,10 +430,10 @@ class PageProcessor:
         self.other_frames_list = tmp_list
         return None
 
-    def __get_rotate_icon_location(self,cv_image):
+    def __get_rotate_icon_location(self,cv_image,icon_img):
 
         # Load images
-        icon_img = cv2.imread('rotate_1.png')
+        # icon_img = cv2.imread('rotate_1.png')
 
         # Create detector
         finder = IconFinder(cv_image.copy(), icon_img, threshold=0.7, scales=[2.0,1.5,1.0, 0.9, 0.8,0.5])
