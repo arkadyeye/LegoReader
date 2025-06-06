@@ -229,6 +229,10 @@ class PageProcessor:
             rect = page.get_image_bbox(img)
             bbox = (int(rect.x0), int(rect.y0), int(rect.x1), int(rect.y1))
 
+            if self.is_image_empty(base_image["image"]):
+                print (f"image {xref} dropped")
+                continue
+
             # area = abs((rect.x1 - rect.x0) * (rect.y1 - rect.y0))
             # print(f"xref: {img[0]} with area {area}")
 
@@ -261,10 +265,25 @@ class PageProcessor:
         # get rotation icon
         self.rotate_icons_list = self.__get_rotate_icon_location(page_image,self.rotate_icon_img)
 
+    def is_image_empty(self,image_bytes, threshold=5):
+        # Convert bytes to NumPy array
+        nparr = np.frombuffer(image_bytes, np.uint8)
 
+        # Decode image from buffer (automatically handles PNG/JPEG/etc.)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise ValueError("Invalid image bytes or unsupported format.")
 
+        # Flatten image to list of pixels: shape (num_pixels, 3)
+        pixels = img.reshape(-1, img.shape[-1])
 
-        ######################################
+        # Count unique colors
+        unique_colors = np.unique(pixels, axis=0)
+
+        # Return True if the number of unique colors is below the threshold
+        return len(unique_colors) < threshold
+
+    ######################################
 
     def process_page(self,pdf_doc,page_index):
         '''

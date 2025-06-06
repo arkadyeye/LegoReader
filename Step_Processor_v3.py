@@ -154,7 +154,7 @@ class StepProcessor:
             6) done ?
          
         '''
-        start_page_index = 12
+        # start_page_index = 12
         for page_index in range (start_page_index,396): #40
 
             # get a page
@@ -331,7 +331,7 @@ class StepProcessor:
                         last_image = image
 
                 if left_images_count == 1: # it's the final step image
-                    step_block.final_image = last_image
+                    step_block.final_image_block = last_image
                     last_image.used = True
                 else:
                     # here we are checking if some image left for STEP (not whole page
@@ -886,6 +886,12 @@ class StepProcessor:
                                         x0, y0, x1, y1 = sub_step3.step_frame
                                         cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (0, 0, 255), 2)
 
+                # self.pretty_print_stepblock (step)
+                if step.final_image_block is not None:
+                    x0, y0, x1, y1 = step.final_image_block.pos
+                    cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (0, 0, 255), 3)
+                else:
+                    self.pretty_print_stepblock(step)
                                 # and here also can be a sub sub module
 
             cv2.imshow("basic_debug", working_page_basic)
