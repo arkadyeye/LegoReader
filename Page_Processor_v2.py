@@ -229,9 +229,16 @@ class PageProcessor:
             rect = page.get_image_bbox(img)
             bbox = (int(rect.x0), int(rect.y0), int(rect.x1), int(rect.y1))
 
+
             if self.is_image_empty(base_image["image"]):
-                print (f"image {xref} dropped")
+                # print (f"image {xref} dropped by colors")
                 continue
+
+            # if self.is_almost_empty(base_image["image"]):
+            #     print(f"image {xref} dropped by pixels")
+            #     continue
+
+
 
             # area = abs((rect.x1 - rect.x0) * (rect.y1 - rect.y0))
             # print(f"xref: {img[0]} with area {area}")
@@ -256,6 +263,22 @@ class PageProcessor:
         page_image = cv2.cvtColor(page_image, cv2.COLOR_BGRA2RGB)
         self.page_image = page_image
 
+        self.images_list = self.remove_overlapping_images(self.images_list,debug = False)
+
+        # match images
+        matching_ids = self.find_possible_matches(self.images_list)
+        merged = self.merge_matched_images_cv(matching_ids,self.images_list)
+
+        self.images_list = merged
+        # for xref_a, xref_b, img_np in merged:
+        #     cv2.imshow(f"Merged {xref_a} + {xref_b}", img_np)
+        #     cv2.waitKey(0)
+
+        #
+        #
+        # zz = find_possible_matches(self.images_list)
+        # print (zz)
+
         #get substep frames
         self.framed_sub_steps_list = self.__get_frames_locations(page_image, self.framed_sub_step_color)
 
@@ -265,7 +288,7 @@ class PageProcessor:
         # get rotation icon
         self.rotate_icons_list = self.__get_rotate_icon_location(page_image,self.rotate_icon_img)
 
-    def is_image_empty(self,image_bytes, threshold=5):
+    def is_image_empty(self,image_bytes, threshold=35): # for extreme adventure i've used 5
         # Convert bytes to NumPy array
         nparr = np.frombuffer(image_bytes, np.uint8)
 
@@ -282,6 +305,30 @@ class PageProcessor:
 
         # Return True if the number of unique colors is below the threshold
         return len(unique_colors) < threshold
+
+    def is_almost_empty(self, image_bytes, threshold_percent=15, pixel_threshold=10):
+        # Convert bytes to NumPy array
+        nparr = np.frombuffer(image_bytes, np.uint8)
+
+        # Decode image from buffer (handles PNG/JPEG/etc.)
+        img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            raise ValueError("Invalid image bytes or unsupported format.")
+
+        # Normalize pixel values to range [0, 1]
+        normalized = img / 255.0
+
+        # Consider pixels non-empty if not near black or white
+        non_empty_pixels = np.logical_and(
+            normalized > pixel_threshold / 255.0,
+            normalized < 1 - (pixel_threshold / 255.0)
+        )
+
+        non_empty_count = np.count_nonzero(non_empty_pixels)
+        total_pixels = img.size
+        non_empty_percent = (non_empty_count / total_pixels) * 100
+
+        return non_empty_percent < threshold_percent
 
     ######################################
 
@@ -516,98 +563,331 @@ class PageProcessor:
         return rects
 
 
-    '''
-    here we get stages number list, in a form of (text,position)
-    and a partslist list (position)
-    
-    we need to applay some logic,to extend stages number are to the whole stage are
-    and return a new list
-    '''
 
-    # def detect_steps_area(self):
-    #
-    #     # tut nado peredelat tak:
-    #     # 1) tepre parts list i prochie list - eto ob'ekti'
-    #     # 2) tut shag 1 - proverit esli est' nomera fontov ot shaga
-    #     # 3) tut nado proverit' esli est' shag ot sub module s nomerom.
-    #     #
-    #     # on mojet bit kak i samostoyatelniy, tak i posle bolshogo shaga
-    #     #
-    #     # a escho ya sovsem ne produmal kak nahodit font vnutri rozovogo submodule. mojet tam drugoy ?
-    #     # ili takoyje ? voobshem obdumat
-    #
-    #     pdf_x, pdf_y = self.page_size
-    #     steps = []
-    #
-    #     # exclude some obvious cases
-    #
-    #     # if there is no steps numbers - return empty array
-    #
-    #     if len(self.step_texts) == 0 and len(self.page_sub_module_texts) == 0: return steps
-    #
-    #     if len(self.step_texts) > 0:
-    #         # means we have some real steps,
-    #         # and we can check if there is parts list
-    #
-    #         # sort the list, so the last step on the page, will be last on array
-    #         self.step_texts.sort(key=lambda block: int(block.text))
-    #
-    #         # step 1 - detect the top left point - start of step
-    #
-    #         for step_number in self.step_texts:
-    #             x1, y1, x2, y2 = step_number.pos
-    #
-    #             # txt, (x1, y1, x2, y2)
-    #             # check if there is a part list above it
-    #             for part_list in self.parts_list:
-    #                 rx1, ry1, rx2, ry2 = part_list.pos
-    #                 if rx1 < x1 + 10 < rx2 and ry1 < y1 - 20 < ry2:
-    #                     y1 = ry1 - 1
-    #                     x2 = rx2
-    #                     break
-    #
-    #             # make a few pixels before the number inside step area
-    #             x1 = x1 - 10
-    #             steps.append((x1, y1, x2, y2))
-    #
-    #         for i in range(len(steps) - 1):
-    #             x1, y1, x2, y2 = steps[i]
-    #
-    #             index_right = -1
-    #             index_down = -1
-    #
-    #             # first check if THE NEXT ONE is below
-    #             xx1, yy1, xx2, yy2 = steps[i + 1]
-    #
-    #             if y2 < yy1:
-    #                 # print(" found down of NEXT")
-    #                 index_down = i + 1
-    #
-    #             for j in range(i + 1, len(steps)):
-    #                 xx1, yy1, xx2, yy2 = steps[j]
-    #
-    #                 if x2 < xx1 and index_right == -1:
-    #                     # print(" found right neighbor")
-    #                     index_right = j
-    #
-    #             # update from relevant neighbor
-    #             if index_right != -1:
-    #                 xx1, yy1, xx2, yy2 = steps[index_right]
-    #                 x2 = xx1 - 5
-    #             else:
-    #                 x2 = pdf_x - 5
-    #
-    #             if index_down != -1:
-    #                 xx1, yy1, xx2, yy2 = steps[index_down]
-    #                 y2 = yy1 - 5
-    #             else:
-    #                 y2 = pdf_y - 5
-    #
-    #             steps[i] = (x1, y1, x2, y2)
-    #
-    #         # update the last element size
-    #
-    #         x1, y1, x2, y2 = steps[-1]
-    #         steps[-1] = (x1, y1, pdf_x - 5, pdf_y - 5)
-    #
-    #     return steps
+    # a helper function (by gpt) that find two matching images by their location and size
+    def find_possible_matches(self,blocks, align_tolerance=1, size_tolerance=2): # 3,5
+        """
+        Find image blocks that possibly match either horizontally or vertically,
+        with both positional and size similarity checks.
+
+        Parameters:
+            blocks (list of ContentBlock): Must have 'pos' and 'xref'
+            align_tolerance (int): Max pixel gap for alignment
+            size_tolerance (int): Max pixel difference for size matching
+
+        Returns:
+            list of tuples: (xref_a, xref_b, direction)
+        """
+        matches = []
+
+        for i, block_a in enumerate(blocks):
+            if block_a.type != "image":
+                continue
+            x1_a, y1_a, x2_a, y2_a = block_a.pos
+            width_a = x2_a - x1_a
+            height_a = y2_a - y1_a
+
+            for j, block_b in enumerate(blocks):
+                if i == j or block_b.type != "image":
+                    continue
+                x1_b, y1_b, x2_b, y2_b = block_b.pos
+                width_b = x2_b - x1_b
+                height_b = y2_b - y1_b
+
+                # --- Vertical Match: A above B ---
+                vertically_aligned = abs(y2_a - y1_b) <= align_tolerance
+                horizontal_overlap = not (x2_a < x1_b or x2_b < x1_a)
+                width_similar = abs(width_a - width_b) <= size_tolerance
+
+                if vertically_aligned and horizontal_overlap and width_similar:
+                    matches.append((block_a.xref, block_b.xref, "vertical"))
+
+                # --- Horizontal Match: A to the left of B ---
+                horizontally_aligned = abs(x2_a - x1_b) <= align_tolerance
+                vertical_overlap = not (y2_a < y1_b or y2_b < y1_a)
+                height_similar = abs(height_a - height_b) <= size_tolerance
+
+                if horizontally_aligned and vertical_overlap and height_similar:
+                    matches.append((block_a.xref, block_b.xref, "horizontal"))
+
+        return matches
+
+    def merge_matched_images_cv(self, matches, blocks, show_preview=True):
+        """
+        Merge matched image pairs using OpenCV, rescaling to match dimensions.
+        Removes original ContentBlocks and adds new merged ones with combined coordinates.
+
+        Parameters:
+            matches (list): Tuples of (xref_a, xref_b, direction)
+            blocks (list): ContentBlock objects with .xref and .image_bytes
+            show_preview (bool): Whether to show preview of merged images
+
+        Returns:
+            list: Updated blocks list with merged ContentBlocks
+        """
+        xref_map = {block.xref: block for block in blocks if block.type == "image"}
+        merged_blocks = []
+        processed_xrefs = set()
+        skip_previews = False  # Flag to skip remaining previews if user presses 'q'
+
+        for xref_a, xref_b, direction in matches:
+            block_a = xref_map.get(xref_a)
+            block_b = xref_map.get(xref_b)
+            if not block_a or not block_b:
+                continue
+
+            # Skip if already processed
+            if xref_a in processed_xrefs or xref_b in processed_xrefs:
+                continue
+
+            # Decode image bytes to OpenCV format
+            img_a = cv2.imdecode(np.frombuffer(block_a.image_bytes, np.uint8), cv2.IMREAD_UNCHANGED)
+            img_b = cv2.imdecode(np.frombuffer(block_b.image_bytes, np.uint8), cv2.IMREAD_UNCHANGED)
+
+            if img_a is None or img_b is None:
+                continue
+
+            # Ensure 3 or 4 channels match
+            if img_a.shape[2] != img_b.shape[2]:
+                continue
+
+            # --- Rescale to match dimensions before merge ---
+            if direction == "vertical":
+                # Match width
+                target_width = img_a.shape[1]
+                scale_b = target_width / img_b.shape[1]
+                new_height_b = int(img_b.shape[0] * scale_b)
+                img_b_resized = cv2.resize(img_b, (target_width, new_height_b))
+                merged = np.vstack((img_a, img_b_resized))
+
+                # Calculate merged coordinates (vertical stacking)
+                x1 = min(block_a.pos[0], block_b.pos[0])
+                y1 = min(block_a.pos[1], block_b.pos[1])
+                x2 = max(block_a.pos[2], block_b.pos[2])
+                y2 = max(block_a.pos[3], block_b.pos[3])
+
+            elif direction == "horizontal":
+                # Match height
+                target_height = img_a.shape[0]
+                scale_b = target_height / img_b.shape[0]
+                new_width_b = int(img_b.shape[1] * scale_b)
+                img_b_resized = cv2.resize(img_b, (new_width_b, target_height))
+                merged = np.hstack((img_a, img_b_resized))
+
+                # Calculate merged coordinates (horizontal stacking)
+                x1 = min(block_a.pos[0], block_b.pos[0])
+                y1 = min(block_a.pos[1], block_b.pos[1])
+                x2 = max(block_a.pos[2], block_b.pos[2])
+                y2 = max(block_a.pos[3], block_b.pos[3])
+
+            else:
+                continue
+
+            # Show preview of merged image
+            if show_preview and not skip_previews:
+                cv2.imshow(f'Merged Image: {xref_a} + {xref_b}', merged)
+                print(f"Preview: {xref_a} + {xref_b} ({direction})")
+                # print("Press any key to continue, 'q' to quit previewing...")
+                # key = cv2.waitKey(0)
+                # cv2.destroyAllWindows()
+
+                # If user pressed 'q', skip remaining previews
+                # if key == ord('q'):
+                #     print("Skipping remaining previews...")
+                #     skip_previews = True
+
+            # Convert merged image back to bytes
+            is_success, buffer = cv2.imencode('.png', merged)
+            if not is_success:
+                continue
+            merged_bytes = buffer.tobytes()
+
+            # Create new merged ContentBlock
+            merged_block = ContentBlock(
+                type="image",
+                pos=(x1, y1, x2, y2),
+                xref=f"{xref_a}_{xref_b}_merged",  # or generate unique ID
+                image_bytes=merged_bytes,
+                image_extension="png",
+                image_name=f"merged_{block_a.image_name or xref_a}_{block_b.image_name or xref_b}",
+                used=False
+            )
+
+            merged_blocks.append(merged_block)
+            processed_xrefs.add(xref_a)
+            processed_xrefs.add(xref_b)
+
+        # Remove original blocks that were merged and add new merged blocks
+        updated_blocks = [block for block in blocks if block.xref not in processed_xrefs]
+        updated_blocks.extend(merged_blocks)
+
+        return updated_blocks
+
+    # this time by claude. find overlaping images
+    import cv2
+    import numpy as np
+
+    def remove_overlapping_images(self, blocks, tolerance=5, show_preview=True, max_size_ratio=5.0, debug=True):
+        """
+        Detect overlapping images, show preview, and remove smaller ones.
+        Only removes if the larger image is not more than max_size_ratio times bigger.
+
+        Parameters:
+            blocks (list): List of ContentBlock objects
+            tolerance (int): Pixel tolerance for considering positions as "same"
+            show_preview (bool): Whether to show preview before removing
+            max_size_ratio (float): Maximum ratio between larger and smaller image areas (default: 2.0)
+            debug (bool): Whether to show debug prints and previews (default: True)
+
+        Returns:
+            list: Updated blocks list with overlapping smaller images removed
+        """
+        image_blocks = [block for block in blocks if block.type == "image"]
+        blocks_to_remove = []
+
+        # Override show_preview if debug is off
+        if not debug:
+            show_preview = False
+
+        def get_area(block):
+            """Calculate area of a block"""
+            return (block.pos[2] - block.pos[0]) * (block.pos[3] - block.pos[1])
+
+        def positions_overlap(pos1, pos2, tolerance):
+            """Check if two positions overlap within tolerance"""
+            # Check if starting points are within tolerance
+            x1_close = abs(pos1[0] - pos2[0]) <= tolerance
+            y1_close = abs(pos1[1] - pos2[1]) <= tolerance
+
+            # Check if one rectangle is contained within another or they significantly overlap
+            # Rectangle 1: (x1, y1, x2, y2), Rectangle 2: (x3, y3, x4, y4)
+            x1, y1, x2, y2 = pos1
+            x3, y3, x4, y4 = pos2
+
+            # Calculate overlap area
+            overlap_x = max(0, min(x2, x4) - max(x1, x3))
+            overlap_y = max(0, min(y2, y4) - max(y1, y3))
+            overlap_area = overlap_x * overlap_y
+
+            # Calculate areas
+            area1 = (x2 - x1) * (y2 - y1)
+            area2 = (x4 - x3) * (y4 - y3)
+
+            # Consider overlapping if:
+            # 1. Starting points are close AND there's significant overlap, OR
+            # 2. One rectangle is mostly contained in another (80% overlap)
+            significant_overlap = overlap_area > 0.8 * min(area1, area2)
+
+            return (x1_close and y1_close and overlap_area > 0) or significant_overlap
+
+        # Find overlapping pairs
+        overlapping_pairs = []
+        for i in range(len(image_blocks)):
+            for j in range(i + 1, len(image_blocks)):
+                block1 = image_blocks[i]
+                block2 = image_blocks[j]
+
+                if positions_overlap(block1.pos, block2.pos, tolerance):
+                    area1 = get_area(block1)
+                    area2 = get_area(block2)
+
+                    # Determine which is smaller and calculate size ratio
+                    if area1 < area2:
+                        smaller_block, larger_block = block1, block2
+                        smaller_area, larger_area = area1, area2
+                    else:
+                        smaller_block, larger_block = block2, block1
+                        smaller_area, larger_area = area2, area1
+
+                    # Check if size ratio is within acceptable range
+                    size_ratio = larger_area / smaller_area if smaller_area > 0 else float('inf')
+
+                    if size_ratio <= max_size_ratio:
+                        overlapping_pairs.append((smaller_block, larger_block, size_ratio))
+                    else:
+                        if debug:
+                            print(
+                                f"Skipping overlap removal - size ratio too large: {size_ratio:.2f} > {max_size_ratio}")
+                            print(f"  Smaller: {smaller_block.xref} (Area: {smaller_area})")
+                            print(f"  Larger:  {larger_block.xref} (Area: {larger_area})")
+
+        if debug:
+            print(f"Found {len(overlapping_pairs)} overlapping image pairs")
+
+        # Process each overlapping pair
+        for smaller_block, larger_block, size_ratio in overlapping_pairs:
+            # Skip if already marked for removal
+            if smaller_block in blocks_to_remove:
+                continue
+
+            if debug:
+                print(f"\nOverlapping images detected (ratio: {size_ratio:.2f}):")
+                print(f"  Smaller: {smaller_block.xref} - Area: {get_area(smaller_block)} - Pos: {smaller_block.pos}")
+                print(f"  Larger:  {larger_block.xref} - Area: {get_area(larger_block)} - Pos: {larger_block.pos}")
+
+            if show_preview:
+                # Decode images for preview
+                try:
+                    img_small = cv2.imdecode(np.frombuffer(smaller_block.image_bytes, np.uint8), cv2.IMREAD_UNCHANGED)
+                    img_large = cv2.imdecode(np.frombuffer(larger_block.image_bytes, np.uint8), cv2.IMREAD_UNCHANGED)
+
+                    if img_small is not None and img_large is not None:
+                        # Show both images side by side
+                        # Resize for better viewing if needed
+                        max_height = 600
+                        if img_small.shape[0] > max_height:
+                            scale = max_height / img_small.shape[0]
+                            new_w = int(img_small.shape[1] * scale)
+                            img_small = cv2.resize(img_small, (new_w, max_height))
+
+                        if img_large.shape[0] > max_height:
+                            scale = max_height / img_large.shape[0]
+                            new_w = int(img_large.shape[1] * scale)
+                            img_large = cv2.resize(img_large, (new_w, max_height))
+
+                        # Create side-by-side comparison
+                        # Make sure both images have same height for concatenation
+                        target_height = max(img_small.shape[0], img_large.shape[0])
+
+                        # Pad smaller height image
+                        if img_small.shape[0] < target_height:
+                            pad_height = target_height - img_small.shape[0]
+                            img_small = np.pad(img_small, ((0, pad_height), (0, 0), (0, 0)), mode='constant',
+                                               constant_values=255)
+
+                        if img_large.shape[0] < target_height:
+                            pad_height = target_height - img_large.shape[0]
+                            img_large = np.pad(img_large, ((0, pad_height), (0, 0), (0, 0)), mode='constant',
+                                               constant_values=255)
+
+                        # Add labels
+                        if debug:
+                            cv2.putText(img_small, f"SMALLER: {smaller_block.xref}", (10, 30),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                            cv2.putText(img_large, f"LARGER: {larger_block.xref}", (10, 30),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+                            # Concatenate horizontally
+                            comparison = np.hstack([img_small, img_large])
+
+                            cv2.imshow('Overlapping Images - SMALLER (left) will be REMOVED', comparison)
+
+                        blocks_to_remove.append(smaller_block)
+
+                except Exception as e:
+                    if debug:
+                        print(f"Error showing preview: {e}")
+                    blocks_to_remove.append(smaller_block)
+            else:
+                # Auto-remove without preview
+                blocks_to_remove.append(smaller_block)
+
+        # Remove the smaller overlapping images
+        updated_blocks = [block for block in blocks if block not in blocks_to_remove]
+
+        if debug:
+            print(f"\nRemoved {len(blocks_to_remove)} overlapping smaller images:")
+            for block in blocks_to_remove:
+                print(f"  - {block.xref} (Area: {get_area(block)})")
+
+        return updated_blocks

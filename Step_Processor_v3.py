@@ -33,8 +33,6 @@ from skimage.metrics import structural_similarity as ssim
 
 import Page_Processor_v2
 
-# import Page_Processor_v2
-
 '''
 v2 approach. we start our code from step processor:
 for now, assume that the first page is the first relevant page, so it contains a step number "1"
@@ -57,7 +55,7 @@ no diferences between numbered sub steps, and framed sub steps (or sub sub steps
 a uniqe sub step can have a step number of zero
 '''
 
-min_acceptance_score = 0.8
+min_acceptance_score = 0.72
 
 @dataclass
 class StepBlock:
@@ -109,10 +107,10 @@ def rect_center_distance(rect1, rect2):
     center1_y = (y0_1 + y1_1) / 2
 
     # Calculate center of rect2
-    # center2_x = (x0_2 + x1_2) / 2
-    # center2_y = (y0_2 + y1_2) / 2
-    center2_x = x0_2
-    center2_y = y0_2
+    center2_x = (x0_2 + x1_2) / 2
+    center2_y = (y0_2 + y1_2) / 2
+    # center2_x = x0_2
+    # center2_y = y0_2
 
     # Calculate Euclidean distance
     distance = math.sqrt((center2_x - center1_x) ** 2 + (center2_y - center1_y) ** 2)
@@ -154,7 +152,9 @@ class StepProcessor:
             6) done ?
          
         '''
-        # start_page_index = 12
+
+        # start_page_index = 107
+        start_page_index = 2
         for page_index in range (start_page_index,396): #40
 
             # get a page
@@ -165,209 +165,215 @@ class StepProcessor:
             page_processor.process_page(pdf_doc, page_index)
             step_blocks = self.__detect_steps_frame(page_processor,page_size)
 
+            prev_page_total_blocks = len(total_step_bocks)
+
+            try:
+
+                if step_blocks:
+
+                    # proceed each parts list of the step
+                    for step_block in step_blocks:
+
+                        # get relevant texts and images
+                        relevant_texts = []
+                        relevant_images = []
+
+                        # check for text inside parts frame
+                        for text in page_processor.parts_list_texts:
+                            if text.used: continue
+                            if rect_intersect(step_block.step_frame, text.pos):
+                                relevant_texts.append(text)
+
+                        # check for images inside parts frame
+                        for image in page_processor.images_list:
+                            if image.used: continue
+                            if rect_intersect(step_block.step_frame, image.pos):
+                                relevant_images.append(image)
+
+                        # process parts list, create files and parts.csv
+                        step_block.step_folder_path = os.path.join(self.top_folder, "s" + str(step_block.step_num))
+                        parts_meta,parts_images = self.__process_parts_list(relevant_texts, relevant_images)
+
+                        # after we have extracted small parts, filter images with small area
+                        # i'm marking them as used, so other logic will skip it (hopefully)
+                        for image in relevant_images:
+                            x0, y0, x1, y1 = image.pos
+                            area = abs((x1 - x0) * (y1 - y0))
+                            if area < 500:
+                                image.used = True
+
+                        # ---------------------------------------------------
+                        # up to here we have a list of steps, with their area
+                        #----------------------------------------------------
+
+
+                        # check for framed sub steps
+                        # we have to do it in the step loop, so relevant images will be relevant
+                        framed_sub_steps = []
+                        if page_processor.framed_sub_steps_list:
+                            for frame in page_processor.framed_sub_steps_list:
+                                if rect_intersect(step_block.step_frame,frame.pos):
+                                    if not step_block.sub_steps:
+                                        step_block.sub_steps = []
+
+                                    sub_frame = self.__process_frame(page_processor,frame,relevant_images)
+                                    framed_sub_steps.extend(sub_frame)
+
+
+                        # for each step area, check if there is numbered sub steps
+                        numbered_steps = []
+                        if page_processor.numbered_sub_module_texts:
+                            numbered_steps = self.__detect_page_submodule(page_processor,step_block,relevant_images)
+
+                        # do some logic, to place the sub steps (numbered or framed) into the step
+
+                        #only numbered steps
+                        if not framed_sub_steps and numbered_steps:
+                            step_block.sub_steps = numbered_steps
+                        # only framed steps
+                        elif framed_sub_steps and not numbered_steps:
+                            step_block.sub_steps = framed_sub_steps
+                        # both of them
+                        else:
+                            # here we have both numbered and sub.
+                            # so we need to find for each frame, to what numbered step it belongs
+                            for frame in framed_sub_steps:
+                                min_dist = 10000
+                                min_numbered_step = None
+                                for numbered_step in numbered_steps:
+                                    dist = rect_center_distance(numbered_step.step_frame, frame.step_frame)
+                                    if dist < min_dist:
+                                        min_dist = dist
+                                        min_numbered_step = numbered_step
+
+                                if min_numbered_step.sub_steps is None:
+                                    min_numbered_step.sub_steps = []
+                                min_numbered_step.sub_steps.append(frame)
+
+                            step_block.sub_steps = numbered_steps
+
+                        # check for rotation icons
+                        if page_processor.rotate_icons_list:
+                            for rotation_icon in page_processor.rotate_icons_list:
+                                self.__insert_rotation_flag(step_block,rotation_icon)
+
+                        # search for 1:1 frames, and mark all inside images as used
+                        self.__clean_1_1_frames(page_processor,relevant_images)
 
 
 
-            # tmp skip, while working on sub steps
-            # if page_processor.numbered_sub_module_texts is None or len(page_processor.numbered_sub_module_texts) == 0:
-            #     continue
+                        #if only one unused image left, it's probably the final image of the step
+                        #if mor that one image left - rise a warning
+                        # if not even one left, we probably in numbered step
+                        left_images_count = 0
+                        last_image = None
 
-            # if not page_processor.framed_sub_steps_list:
-            #     continue
+                        for image in relevant_images:
+                            if image.used is False:
+                                left_images_count += 1
+                                last_image = image
+                        print(f"step {step_block.step_num} , images left: {left_images_count}")
 
-            if step_blocks is None:
-                # here is a uniq case, where no steps exist. generaly it's a final part of numbered substeps
-                print ("Warning !!!! got None step block")
+                        if left_images_count == 0:
+                            print ("WARNING: No image left for thew final ")
 
-                # rotation angle may be here too
-                # rotate_icons = page_processor.rotate_icons_list
-                # print("rotate_icons: ", rotate_icons)
+                        elif left_images_count == 1: # it's the final step image
+                            step_block.final_image_block = last_image
+                            last_image.used = True
+                        else:
+                            sorted_blocks = sorted(relevant_images, key=lambda block: (block.used, -get_area(block)))
+                            step_block.final_image_block = sorted_blocks[0]
+                            sorted_blocks[0].used = True
 
-                if page_processor.numbered_sub_module_texts:
-                    print ("we do hove some numbered block")
+                            print("WARNING: too much images left ")
 
-                    # the sub block may contain framed block
-                    # or there maybe more that one
+                        # save processed block to full blocks list (hopefully we have enough RAM)
 
-                    # first check for framed step
-                    # check for framed sub steps
-                    # we have to do it in the step loop, so relevant images will be relevant
-                    numbered_step_block = StepBlock(
-                        type="sub_step",
-                        step_num=0, #!!!!!!!!!!!!!1 change here
-                        # this should be set properly, if there is do step on the page (but how to know it ?)
-                        step_frame = (1, 1, int(page.rect.width), int(page.rect.height))
-                    )
+                        total_step_bocks.append(step_block)
 
-                    # for each step area, check if there is numbered sub steps
-                    numbered_steps = self.__detect_page_submodule(page_processor, numbered_step_block, page_processor.images_list)
+                '''
+                so here we have processed all steps. but maybe we have some loan from the previous one
+                but how do we know which was the previous ? because a page can contain many steps
+                '''
 
-                    # get framed sub step
-                    framed_sub_steps = []
-                    if page_processor.framed_sub_steps_list:
-                        for frame in page_processor.framed_sub_steps_list:
+                prev_block = total_step_bocks[prev_page_total_blocks-1]
 
-                            if not numbered_step_block.sub_steps:
-                                step_block.sub_steps = []
+                if prev_block.final_image_block is None:
+                    print ("we have some loan from prev step")
 
-                            sub_frame = self.__process_frame(page_processor, frame, page_processor.images_list)
-                            framed_sub_steps.extend(sub_frame)
+                    # check if there is submodule text (it may or may not exist)
+                    numbered_sub_module_text_exist = False
+                    if page_processor.numbered_sub_module_texts:
+                        for text in page_processor.numbered_sub_module_texts:
+                            if text.used == False:
+                                numbered_sub_module_text_exist = True
+                                break
 
-                        numbered_steps[0].sub_steps = framed_sub_steps
+                    if numbered_sub_module_text_exist:
+                        page_processor.numbered_sub_module_texts.sort(key=lambda block: (block.used,int(block.text)))
 
-                    # process the numbered block, add framed by the end
+                        for text in page_processor.numbered_sub_module_texts:
+                            if text.used is False:
+                                print("we do have some sub step to process: step num: ",text.text)
+
+                                 # we create a fake block, to detection function.
+                                # actually, we need only the step_frame value
+                                numbered_step_block = StepBlock(
+                                        type="sub_step",
+                                        step_num=-1,
+
+                                        # this should be set properly, if there is do step on the page (but how to know it ?)
+                                        step_frame=(1, 1, int(page.rect.width), int(page.rect.height))
+                                    )
+
+                                # for each step area, check if there is numbered sub steps
+                                numbered_steps = self.__detect_page_submodule(page_processor, numbered_step_block,
+                                                                              page_processor.images_list)
+
+                                # print ("found numbered steps",numbered_steps)
+                                prev_block.sub_steps.extend(numbered_steps)
+
+                        # means we do have a loan from prev step, but step is not continues
+                        # so, count how many unused images left. if only one - here it is
+                        # if more - get the big one (hopefully)
+                        #
 
 
+                    sorted_images = sorted(page_processor.images_list, key=lambda block: (block.used, get_area))
+                    # print ("sorted images: ",sorted_images)
+                    if sorted_images[0].used == False:
+                        # we got the bigest unused image: take it
+                        prev_block.final_image_block = sorted_images[0]
+                        sorted_images[0].used = True
 
-                    numbered_step_block.sub_steps = numbered_steps
+                    if len(sorted_images) > 1 and sorted_images[1].used == False:
+                        print ("Warning. we have left with unused images")
 
-                    print ("last real step block: ",total_step_bocks[-1])
-                    print ("stand alone numbered_step_block: ",numbered_step_block)
-                    self.pretty_print_stepblock(numbered_step_block)
 
-                # continue
-
-                step_blocks = []
-
-            # proceed each parts list of the step
-            for step_block in step_blocks:
-
-                # get relevant texts and images
-                relevant_texts = []
-                relevant_images = []
-
-                # check for text inside parts frame
-                for text in page_processor.parts_list_texts:
-                    if text.used: continue
-                    if rect_intersect(step_block.step_frame, text.pos):
-                        relevant_texts.append(text)
-
-                # check for images inside parts frame
+                # do, up to here, we have processed steps, and some "loans" from the prev sub step
+                counter = 0
                 for image in page_processor.images_list:
-                    if image.used: continue
-                    if rect_intersect(step_block.step_frame, image.pos):
-                        relevant_images.append(image)
+                    if image.used == False:
+                        counter += 1
 
-                # process parts list, create files and parts.csv
-                step_block.step_folder_path = os.path.join(self.top_folder, "s" + str(step_block.step_num))
-                parts_meta,parts_images = self.__process_parts_list(relevant_texts, relevant_images)
+                if counter > 0:
+                    print("we have left some images on the page  !!!!! ",counter)
 
-                # after we have extracted small parts, filter images with small area
-                # i'm marking them as used, so other logic will skip it (hopefully)
-                for image in relevant_images:
-                    x0, y0, x1, y1 = image.pos
-                    area = abs((x1 - x0) * (y1 - y0))
-                    if area < 500:
-                        image.used = True
-
-                # ---------------------------------------------------
-                # up to here we have a list of steps, with their area
-                #----------------------------------------------------
-
-                # check for framed sub steps
-                # we have to do it in the step loop, so relevant images will be relevant
-                framed_sub_steps = []
-                if page_processor.framed_sub_steps_list:
-                    for frame in page_processor.framed_sub_steps_list:
-                        if rect_intersect(step_block.step_frame,frame.pos):
-                            if not step_block.sub_steps:
-                                step_block.sub_steps = []
-
-                            sub_frame = self.__process_frame(page_processor,frame,relevant_images)
-                            framed_sub_steps.extend(sub_frame)
+                # here goes a verification function.
+                # we should check for the page, that there is no images left
+                # for now, for sure there are: but we have to dela with it
 
 
-                # for each step area, check if there is numbered sub steps
-                numbered_steps = []
-                if page_processor.numbered_sub_module_texts:
-                    numbered_steps = self.__detect_page_submodule(page_processor,step_block,relevant_images)
 
-                # do some logic, to place the sub steps (numbered or framed) into the step
+                # print ("step is",step_block.step_num)
+                self.__show_unused_images(page_processor.page_image,page_processor.images_list)
+                self.__show_debug_frames(page_processor.page_image,step_blocks)
 
-                #only numbered steps
-                if not framed_sub_steps and numbered_steps:
-                    step_block.sub_steps = numbered_steps
-                # only framed steps
-                elif framed_sub_steps and not numbered_steps:
-                    step_block.sub_steps = framed_sub_steps
-                # both of them
-                else:
-                    # here we have both numbered and sub.
-                    # so we need to find for each frame, to what numbered step it belongs
-                    for frame in framed_sub_steps:
-                        min_dist = 10000
-                        min_numbered_step = None
-                        for numbered_step in numbered_steps:
-                            dist = rect_center_distance(numbered_step.step_frame, frame.step_frame)
-                            if dist < min_dist:
-                                min_dist = dist
-                                min_numbered_step = numbered_step
-
-                        if min_numbered_step.sub_steps is None:
-                            min_numbered_step.sub_steps = []
-                        min_numbered_step.sub_steps.append(frame)
-
-                    step_block.sub_steps = numbered_steps
-
-                # check for rotation icons
-                if page_processor.rotate_icons_list:
-                    for rotation_icon in page_processor.rotate_icons_list:
-                        self.__insert_rotation_flag(step_block,rotation_icon)
-
-                # search for 1:1 frames, and mark all inside images as used
-                self.__clean_1_1_frames(page_processor,relevant_images)
-
-                #if only one unused image left, it's probably the final image of the step
-                #if mor that one image left - rise a warning
-                # if not even one left, we probably in numbered step
-                left_images_count = 0
-                last_image = None
-
-                sorted_images = sorted(relevant_images, key=get_area, reverse=False)
-
-                for image in sorted_images:
-                    if image.used is False:
-                        left_images_count += 1
-                        last_image = image
-
-                if left_images_count == 1: # it's the final step image
-                    step_block.final_image_block = last_image
-                    last_image.used = True
-                else:
-                    # here we are checking if some image left for STEP (not whole page
-                    print(f"step {step_block.step_num} , images left: {left_images_count}")
-
-
-                # save processed block to full blocks list (hopefully we have enough RAM)
-
-                total_step_bocks.append(step_block)
-
-            # check for page if something left
-            for text in page_processor.numbered_sub_module_texts:
-                if text.used is False:
-                    print ("we have left some text: a numbered submodule !!!!! ")
-
-            counter = 0
-            for image in page_processor.images_list:
-                if image.used is False:
-                    counter += 1
-
-            if counter > 0:
-                print("we have left some images on the page  !!!!! ",counter)
-
-            # here goes a verification function.
-            # we should check for the page, that there is no images left
-            # for now, for sure there are: but we have to dela with it
-
-
-            # print ("step is",step_block.step_num)
-            self.__show_unused_images(page_processor.page_image,page_processor.images_list)
-            self.__show_debug_frames(page_processor.page_image,step_blocks)
-
-            key = cv2.waitKey(0) & 0xFF
-            if key == 27:  #  Esc to quit
-                break
-
+                key = cv2.waitKey(0) & 0xFF
+                if key == 27:  #  Esc to quit
+                    break
+            except Exception as e:
+                print(f"An unexpected error occurred: {e}")
 
     def __detect_steps_frame(self,page_processor,page_size):
 
@@ -533,9 +539,9 @@ class StepProcessor:
                             else:
                                 print ("WARNING: part match failed with score ",max_score)
 
-                                # cv2.imshow('img_part', max_matching_part['image'])
-                                # cv2.imshow('img_in_step', img_in_step)
-                                # cv2.waitKey(0)
+                                cv2.imshow('img_part', max_matching_part['image'])
+                                cv2.imshow('img_in_step', img_in_step)
+                                cv2.waitKey(0)
                                 # cv2.destroyAllWindows()
 
                         continue
@@ -625,6 +631,8 @@ class StepProcessor:
             if rect_inside(frame.pos, image.pos):
                 frame_relevant_images.append(image)
 
+
+
         frame_multiplier = 1
         for text in page_processor.frame_sub_module_texts:
             if rect_inside(frame.pos, text.pos):
@@ -694,6 +702,7 @@ class StepProcessor:
                     if image.used: continue
 
                     dist = rect_center_distance(step_text.pos, image.pos)
+                    # print ("dist",dist)
                     if min_dist > dist:
                         min_dist = dist
                         min_image = image
@@ -834,7 +843,7 @@ class StepProcessor:
             if not image.used:
                 # counter +=1
                 x0, y0, x1, y1 = image.pos
-                cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (128, 128, 0), 2)
+                cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (0, 0, 255), 3)
 
         # print(f"what is left is {counter}")
 
@@ -867,32 +876,33 @@ class StepProcessor:
             # it's clearly recursive ,but I will make it quick and dirty, because the max depth is 'only' 4
 
             # draw steps
-            for step in step_blocks:
-                x0, y0, x1, y1 = step.step_frame
-                cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (128, 128, 0), 2)
+            if step_blocks:
+                for step in step_blocks:
+                    x0, y0, x1, y1 = step.step_frame
+                    cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (128, 128, 0), 2)
 
-                if step.sub_steps:
-                    for sub_step in step.sub_steps:
-                        x0, y0, x1, y1 = sub_step.step_frame
-                        cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (0, 255, 0), 2)
+                    if step.sub_steps:
+                        for sub_step in step.sub_steps:
+                            x0, y0, x1, y1 = sub_step.step_frame
+                            cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (0, 255, 0), 2)
 
-                        if sub_step.sub_steps:
-                            for sub_step2 in sub_step.sub_steps:
-                                x0, y0, x1, y1 = sub_step2.step_frame
-                                cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (0, 128, 255), 2)
+                            if sub_step.sub_steps:
+                                for sub_step2 in sub_step.sub_steps:
+                                    x0, y0, x1, y1 = sub_step2.step_frame
+                                    cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (0, 128, 255), 2)
 
-                                if sub_step2.sub_steps:
-                                    for sub_step3 in sub_step2.sub_steps:
-                                        x0, y0, x1, y1 = sub_step3.step_frame
-                                        cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (0, 0, 255), 2)
+                                    if sub_step2.sub_steps:
+                                        for sub_step3 in sub_step2.sub_steps:
+                                            x0, y0, x1, y1 = sub_step3.step_frame
+                                            cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (0, 0, 255), 2)
 
-                # self.pretty_print_stepblock (step)
-                if step.final_image_block is not None:
-                    x0, y0, x1, y1 = step.final_image_block.pos
-                    cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (0, 0, 255), 3)
-                else:
-                    self.pretty_print_stepblock(step)
-                                # and here also can be a sub sub module
+                    # self.pretty_print_stepblock (step)
+                    if step.final_image_block is not None:
+                        x0, y0, x1, y1 = step.final_image_block.pos
+                        cv2.rectangle(working_page_basic, (x0, y0), (x1, y1), (0, 0, 255), 3)
+                    # else:
+                    #     self.pretty_print_stepblock(step)
+                                    # and here also can be a sub sub module
 
             cv2.imshow("basic_debug", working_page_basic)
         cv2.waitKey(1)

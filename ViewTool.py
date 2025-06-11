@@ -172,8 +172,9 @@ class LegoInstructionParser:
                 meta_dict['parts_list_font_size']= 8
                 meta_dict['page_number_font_size']= 10
                 meta_dict['sub_step_color']= [202, 239, 255]
-                meta_dict['parts_list_color']= [242, 215, 182]
-                # self.parts_list_color = meta_dict.get('parts_list_color', [255,255,255])
+                # meta_dict['parts_list_color']= [242, 215, 182]
+                meta_dict['parts_list_color'] = [255, 255, 255]
+
 
                 step_processor_v2 = Step_Processor_v3.StepProcessor("processed/"+self.pdf_handler.export_folder,debug_level = 4)
                 step_processor_v2.process_doc(self.pdf_handler.pdf_document,2,meta_dict,self.pdf_handler.all_parts_df)
@@ -226,7 +227,7 @@ if __name__ == "__main__":
     # parser.run("Manuals/10698_X_Castle.pdf")
     # parser.run("6186243.pdf") # small buggy
     # parser.run("6217542.pdf")
-    # parser.run("6420974.pdf") # 6 wheels "kvadrazikl"
-    parser.run("6208467.pdf") # extreme explorer
+    parser.run("6420974.pdf") # 6 wheels "kvadrazikl"
+    # parser.run("6208467.pdf") # extreme explorer
     # parser.run("4520728.pdf") # old nxt
 
