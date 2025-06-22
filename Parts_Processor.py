@@ -28,12 +28,12 @@ class FinalPart:
 
 
 class PartsProcessor:
-    def __init__(self,debug = False):
+    def __init__(self,debug_level = 0):
         self.page_images = []
         self.element_ids = []
         self.amount_texts = []
         self.parts_list_font_size = 6.0
-        self.debug = debug
+        self.debug_level = debug_level
 
         # element_id,part_num,color_id,design_id
         self.df = pd.read_csv('elements.csv')
@@ -214,7 +214,7 @@ class PartsProcessor:
                 print(f"element id {element_id.text} without image !!!!!!!!")
 
             amount = amount[:-1]
-            if self.debug:
+            if self.debug_level > 0:
                 print(f"element id {element_id.text} , amount {amount}")
 
             # look for lego part id and color
@@ -243,7 +243,7 @@ class PartsProcessor:
         print ("parts extracted successfully")
 
 
-        if self.debug:
+        if self.debug_level > 0:
             mat = fitz.Matrix(1, 1)
             pix = current_page_pdf.get_pixmap(matrix=mat)
             img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n).copy()
